@@ -17,6 +17,18 @@ LOCK = Path(os.environ.get("QQ_EVOLUTION_LOCK", "/home/admin/qq-evolution-state/
 PRODUCTION_HOST = os.environ.get("QQ_PRODUCTION_HOST", "root@39.105.219.112")
 
 
+def record_monitor_health(**fields):
+    path = Path(os.environ.get('QQ_MONITOR_HEALTH', '/home/admin/qq-evolution-state/monitor-health.json'))
+    try:
+        store = StateStore(path)
+        health = store.load()
+        health.update(fields)
+        store.save(health)
+        path.chmod(0o600)
+    except OSError:
+        print('monitor heartbeat write failed', flush=True)
+
+
 def development_repo():
     return Path(os.environ.get("QQ_EVOLUTION_REPO", "/home/admin/qq-evolution/development"))
 
@@ -77,6 +89,7 @@ def run_cycle():
     def evaluate_window():
         nonlocal window_hash
         events = fetch_remote_events(PRODUCTION_HOST, "/home/hermes/qq-audit")
+        record_monitor_health(lastFetch=int(time.time()))
         window_hash = hashlib.sha256(json.dumps(events[-80:], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         if state.load().get("lastWindowHash") == window_hash:
             return ""
@@ -108,9 +121,12 @@ def run_cycle():
 def main():
     interval = int(os.environ.get("QQ_EVOLUTION_POLL_SECONDS", "300"))
     while True:
+        record_monitor_health(pollStarted=int(time.time()))
         try:
-            run_cycle()
+            outcome = run_cycle()
+            record_monitor_health(pollFinished=int(time.time()), outcome=outcome)
         except Exception as error:
+            record_monitor_health(pollFinished=int(time.time()), outcome='cycle_error')
             print("qq-evolution cycle failed:", type(error).__name__, flush=True)
         time.sleep(interval)
 

@@ -5,10 +5,16 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from remote_release import apply_source_patch
+from remote_release import FILES, SNAPSHOT_FILES, apply_source_patch
 
 
 class RemotePatchTests(unittest.TestCase):
+    def test_new_runtime_modules_and_tests_are_in_release_snapshots(self):
+        self.assertIn("qq-group-style.mjs", FILES)
+        self.assertIn("qq-space-disk-report.mjs", FILES)
+        self.assertIn("qq-group-style.test.mjs", SNAPSHOT_FILES)
+        self.assertIn("qq-space-disk-report.test.mjs", SNAPSHOT_FILES)
+
     def test_real_git_applies_valid_diff_and_leaves_stale_target_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp)

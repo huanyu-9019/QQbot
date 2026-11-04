@@ -1,6 +1,17 @@
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { persona } from './qq-memory.mjs';
 import { assertSearchOnlyAccess } from './qq-search-policy.mjs';
+import { spawnSync } from 'node:child_process';
+import { ensurePublicationLock } from './qq-qzone-lock.mjs';
+
+// All publishing paths use the same account and lock, including manual root calls.
+if (process.getuid?.() === 0) {
+  const result = spawnSync('/usr/sbin/runuser', ['-u','hermes','--',process.execPath,...process.argv.slice(1)], {
+    stdio: 'inherit', env: {...process.env, HOME:'/home/hermes'},
+  });
+  process.exit(result.status ?? 1);
+}
+ensurePublicationLock('/home/hermes/.config/qq-hermes/qzone-publish.lock');
 
 const mode = process.argv[2] ?? '--dry-run';
 if (!['--dry-run', '--test-private', '--publish', '--publish-update'].includes(mode)) {

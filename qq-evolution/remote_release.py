@@ -20,13 +20,17 @@ FILES = [
     "qq-learned-stickers.mjs", "qq-recent-images.mjs", "qq-typing.mjs",
     "qq-interaction-config.mjs", "qq-search-policy.mjs", "qq-live-facts.mjs",
     "qq-gemini-tts.mjs", "qq-song-clips.mjs", "qq-public-fetch.mjs",
-    "qq-qzone-post.mjs", "qq-stickers.mjs",
+    "qq-qzone-post.mjs", "qq-stickers.mjs", "qq-group-style.mjs",
+    "qq-space-disk-report.mjs",
+    "qq-qzone-lock.mjs",
 ]
 SNAPSHOT_FILES = sorted(FILES + [
     "qq-gemini-tts.test.mjs", "qq-group-routing.test.mjs", "qq-live-facts.test.mjs",
     "qq-media.test.mjs", "qq-memory-cross-session.test.mjs", "qq-memory-recent.test.mjs",
     "qq-relationship.test.mjs", "qq-reminders.test.mjs", "qq-song-clips.test.mjs",
     "qq-conversation-audit.test.mjs",
+    "qq-group-style.test.mjs", "qq-space-disk-report.test.mjs",
+    "qq-qzone-lock.test.mjs",
 ])
 
 

@@ -1,6 +1,7 @@
 import { persona, recall } from './qq-memory.mjs';
 import {userContent} from './qq-media.mjs';
 import { currentFactsContext } from './qq-live-facts.mjs';
+import { groupStyleContext } from './qq-group-style.mjs';
 
 export function buildMessages(task,options={}) {
   if(task.trigger==='typing')return [
@@ -54,6 +55,7 @@ export function buildMessages(task,options={}) {
           : '你是群聊里的参与者，适度积极地接话，不必等别人@你。看到大家向群里开放提问、叫你的名字、接着回应你，或有你能自然接住的玩笑和具体话题时，优先简短回应；不要默认把普通群聊都当作不该插话。可以主动提供一句有用或有趣的回应，但不必每条都回，不重复刚说过的话，也不抢明显只属于其他人的双人对话；没有实质内容、接不上话时保持安静。决定保持安静时直接输出 <QQ_SILENT>，不要搜索，也不要解释或添加别的字符。决定接话后，可以像私聊一样按需要搜索，再按上面的人设自然接话。')
         : '这是私聊，请按上面的人设自然回复。',
       options.learningInstructions||'',
+      groupStyleContext(task, options.groupStyleInstructions),
       '私聊和群聊都可以按聊天需要主动使用 web_search 查询公开网页，无需用户明确说“搜索”，群聊也无需先 @ 你。遇到最新消息、天气、价格、版本、公开人物与事件、产品比较、技术资料、作品或梗的出处，或对具体事实没把握且查证能让回答更准确时，可以自然地先查再答。用户明确要求查证或问题依赖实时信息时，优先搜索，不凭旧知识猜测。',
       '普通斗嘴、情绪安慰、主观感受和已有把握的基础知识直接回答；不要为了搜索而搜索。每次最多两次查询、每次最多三条结果，调用 web_search 时设置 limit 不大于 3；已有足够结果就停止，不反复查询。联网时只围绕当前话题的公开内容构造短搜索词。',
       '回复要像真人聊天：普通闲聊默认只说一两句，尽量控制在60字内；一个意思说完就停，不主动补背景、经历、长解释或总结。只有用户明确要教程、分析、完整步骤时才展开。',

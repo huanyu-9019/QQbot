@@ -17,6 +17,7 @@ import { synthesizeMiniMax, toOneBotAudio, shouldSendVoice, createVoiceLimiter, 
 import { liveFactReply, requiresFreshFacts, hasFreshSearchEvidence } from './qq-live-facts.mjs';
 import { fetchFemaleSongClip, songIntent } from './qq-song-clips.mjs';
 import { createConversationAudit } from './qq-conversation-audit.mjs';
+import { createGroupStyleLearning, safeStyleInstructions } from './qq-group-style.mjs';
 
 
 const env = readFileSync(`${process.env.HOME}/.hermes/.env`, 'utf8');
@@ -32,6 +33,11 @@ const conversationAudit = createConversationAudit({
   saltFile: process.env.QQ_AUDIT_SALT_FILE || `${process.env.HOME}/.config/qq-hermes/audit.salt`,
 });
 conversationAudit.prune();
+let groupStyle;
+try { groupStyle = createGroupStyleLearning({
+  directory: process.env.QQ_GROUP_STYLE_DIR || `${process.env.HOME}/.local/share/qq-group-style`,
+  saltFile: process.env.QQ_GROUP_STYLE_SALT_FILE || `${process.env.HOME}/.config/qq-hermes/group-style.salt`,
+}); } catch { console.error('群聊风格初始化失败，聊天继续'); }
 const mediaConfig=loadMediaConfig();
 const collection=new LearnedStickerLibrary(mediaConfig);
 collection.validateAssets();
@@ -159,7 +165,7 @@ async function askHermes(task) {
   const modelRequestStartedAt = Date.now();
 
   const verifyFresh = !task.collectionOnly && !task.trigger && requiresFreshFacts(task.text);
-  const messages = buildMessages(task,{stickerInstructions:stickers.instructions(),learningInstructions:collection.instructions(task),recentImageInstructions:recentImages.instructions(task)});
+  const messages = buildMessages(task,{stickerInstructions:stickers.instructions(),learningInstructions:collection.instructions(task),recentImageInstructions:recentImages.instructions(task),groupStyleInstructions:safeStyleInstructions(groupStyle,task)});
   const response = await fetch(`${api}/v1/${verifyFresh ? 'responses' : 'chat/completions'}`, {
     method: 'POST',
     headers: {
@@ -368,6 +374,8 @@ function receive(event) {
   if(input.ignored||!mentioned&&!input.text&&!input.imageUrls.length&&!input.error){console.log('QQ 消息跳过：',JSON.stringify({kind,reason:'empty_unsupported'}));return;}
   const mentionOnly=mentioned&&!input.text&&!input.imageUrls.length&&!input.error;
   const text=input.text;
+  try { groupStyle?.observe({ kind, direction: 'incoming', sessionKey, text }); }
+  catch (error) { console.error('群聊表达统计更新失败：', error.message); }
 
   const now = Date.now();
   const privateTooSoon = kind === 'private' &&
