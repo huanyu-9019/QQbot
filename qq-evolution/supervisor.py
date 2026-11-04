@@ -7,7 +7,7 @@ from agent import evaluate_and_propose
 from collector import fetch_remote_events
 from daemon import EvolutionSupervisor, SingleJobLock, StateStore
 from metrics import aggregate
-from patch_policy import changed_paths
+from patch_policy import changed_paths, recount_hunks
 
 
 STATE = Path(os.environ.get("QQ_EVOLUTION_STATE", "/home/admin/qq-evolution-state/state.json"))
@@ -51,6 +51,7 @@ def run_cycle():
 
     def publish(diff):
         try:
+            diff = recount_hunks(diff)
             check_candidate(diff, repo)
         except ValueError:
             return False

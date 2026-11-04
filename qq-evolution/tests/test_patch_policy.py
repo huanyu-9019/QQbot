@@ -3,10 +3,20 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from patch_policy import changed_paths
+from patch_policy import changed_paths, recount_hunks
 
 
 class PatchPolicyTests(unittest.TestCase):
+    def test_recounts_only_hunk_metadata_and_still_rejects_hidden_targets(self):
+        patch = '--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1,9 +1,8 @@\n-old\n+new\n'
+        fixed = recount_hunks(patch)
+        self.assertEqual(fixed, patch.replace('@@ -1,9 +1,8 @@', '@@ -1,1 +1,1 @@'))
+        self.assertEqual(changed_paths(fixed, {'qq-persona.md'}), ['qq-persona.md'])
+        with self.assertRaises(ValueError):
+            changed_paths(recount_hunks(patch + 'RUN arbitrary\n'), {'qq-persona.md'})
+        with self.assertRaises(ValueError):
+            changed_paths(recount_hunks(patch.replace('qq-persona.md', '../secret')), {'qq-persona.md'})
+
     def test_accepts_complete_text_hunk_for_existing_allowlisted_path(self):
         patch = '--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n'
         self.assertEqual(changed_paths(patch, {'qq-persona.md'}), ['qq-persona.md'])

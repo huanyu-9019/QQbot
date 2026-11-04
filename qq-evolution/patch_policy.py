@@ -4,6 +4,27 @@ ALLOWED = re.compile(r"^(?:qq-[A-Za-z0-9._-]+\.mjs|qq-persona\.md|qq-[A-Za-z0-9.
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$")
 
 
+def recount_hunks(patch):
+    lines = patch.splitlines()
+    for index, line in enumerate(lines):
+        match = _HUNK.fullmatch(line)
+        if not match:
+            continue
+        old = new = 0
+        for row in lines[index + 1:]:
+            if row.startswith(("@@ ", "--- a/", "diff --git ")):
+                break
+            if row.startswith("\\ No newline at end of file"):
+                continue
+            if not row or row[0] not in " +-":
+                raise ValueError("invalid hunk row")
+            old += row[0] in " -"
+            new += row[0] in " +"
+        suffix = line.split(" @@", 1)[1]
+        lines[index] = f"@@ -{match.group(1)},{old} +{match.group(3)},{new} @@{suffix}"
+    return "\n".join(lines) + "\n"
+
+
 def changed_paths(patch, allowed_existing):
     if not isinstance(patch, str) or not patch or "\x00" in patch or "\\" in patch:
         raise ValueError("invalid patch text")
