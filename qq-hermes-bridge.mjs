@@ -16,6 +16,7 @@ import {isDirectGroupMessage} from './qq-group-routing.mjs';
 import { synthesizeMiniMax, toOneBotAudio, shouldSendVoice, createVoiceLimiter, cleanupVoiceFiles } from './qq-gemini-tts.mjs';
 import { liveFactReply } from './qq-live-facts.mjs';
 import { fetchFemaleSongClip, songIntent } from './qq-song-clips.mjs';
+import { createConversationAudit } from './qq-conversation-audit.mjs';
 
 
 const env = readFileSync(`${process.env.HOME}/.hermes/.env`, 'utf8');
@@ -26,6 +27,11 @@ const apiKey = keyLine?.slice('API_SERVER_KEY='.length).trim();
 if (!apiKey) throw new Error('找不到 API_SERVER_KEY');
 
 const api = 'http://127.0.0.1:8642';
+const conversationAudit = createConversationAudit({
+  directory: process.env.QQ_AUDIT_DIR || `${process.env.HOME}/qq-audit`,
+  saltFile: process.env.QQ_AUDIT_SALT_FILE || `${process.env.HOME}/.config/qq-hermes/audit.salt`,
+});
+conversationAudit.prune();
 const mediaConfig=loadMediaConfig();
 const collection=new LearnedStickerLibrary(mediaConfig);
 collection.validateAssets();
@@ -52,6 +58,7 @@ const voiceDir = '/tmp/qq-hermes-voice';
 void cleanupVoiceFiles(voiceDir).catch(() => {});
 const activeLanes = new Set();
 const recentImages=new RecentImages(mediaConfig);
+const pendingAuditDeliveries = new Map();
 const typing=new TypingNudges({
   connected:()=>socket?.readyState===WebSocket.OPEN,
   isBusy:()=>working||queue.length>0,
@@ -63,6 +70,14 @@ const typing=new TypingNudges({
 });
 const delivery = new OneBotReplyTracker(outcome => {
   if (outcome.echo) reminderScheduler?.delivery(outcome.echo, outcome.ok);
+  const auditEvent = pendingAuditDeliveries.get(outcome.echo);
+  if (auditEvent) {
+    pendingAuditDeliveries.delete(outcome.echo);
+    if (outcome.ok) {
+      try { conversationAudit.recordDelivered(auditEvent); }
+      catch (error) { console.error('审计回复记录失败：', error.message); }
+    }
+  }
   const log = outcome.ok ? console.log : console.error;
   log('QQ 发送回执：', JSON.stringify(outcome));
 });
@@ -74,13 +89,15 @@ const proactive = createProactiveScheduler({
   processQueue: () => processQueue(),
 });
 
-function sendVoice(task, file) {
+function sendVoice(task, file, text) {
   if (socket?.readyState !== WebSocket.OPEN) return;
   const action = task.kind === 'group' ? 'send_group_msg' : 'send_private_msg';
   const params = task.kind === 'group'
     ? { group_id: task.groupId, message: [{ type: 'record', data: { file } }] }
     : { user_id: task.userId, message: [{ type: 'record', data: { file } }] };
-  return delivery.send(socket, action, params, task.kind);
+  const echo = delivery.send(socket, action, params, task.kind);
+  if (task.turnId && echo) pendingAuditDeliveries.set(echo, { sessionKey: task.sessionKey, kind: task.kind, text, turnId: task.turnId });
+  return echo;
 }
 
 async function maybeSendVoice(task, text) {
@@ -91,7 +108,7 @@ async function maybeSendVoice(task, text) {
   if (forceSong) {
     try {
       const clip = await fetchFemaleSongClip(task.text);
-      const result = sendVoice(task, toOneBotAudio(clip.audio));
+      const result = sendVoice(task, toOneBotAudio(clip.audio), task.text);
       if (result !== undefined) voiceLastSent.set(task.sessionKey, Date.now());
       console.log('QQ 点歌片段发送：', JSON.stringify({ kind: task.kind, title: clip.title, artist: clip.artist }));
       return true;
@@ -101,7 +118,7 @@ async function maybeSendVoice(task, text) {
   }
   try {
     const audio = await synthesizeMiniMax(forceVoiceTest ? '嗯，收到啦。现在是语音测试。' : text, { apiKey: minimaxKey });
-    const result = sendVoice(task, toOneBotAudio(audio));
+    const result = sendVoice(task, toOneBotAudio(audio), text);
     if (result !== undefined) voiceLastSent.set(task.sessionKey, Date.now());
     console.log('QQ 语音发送：', JSON.stringify({ kind: task.kind, chars: Array.from(text).length, forcedTest: forceVoiceTest, forcedSong: forceSong }));
     return true;
@@ -124,7 +141,9 @@ function send(task, text, stickerFile = null) {
   const params = task.kind === 'group'
     ? { group_id: task.groupId, message }
     : { user_id: task.userId, message };
-  return delivery.send(socket, action, params, task.kind);
+  const echo = delivery.send(socket, action, params, task.kind);
+  if (task.turnId && echo) pendingAuditDeliveries.set(echo, { sessionKey: task.sessionKey, kind: task.kind, text: content, turnId: task.turnId });
+  return echo;
 }
 
 reminderScheduler = createReminderScheduler({
@@ -274,7 +293,8 @@ async function processQueue(priorityOnly = false) {
         const text=reply.id&&reply.mode==='requested'&&!stickerFile?stickers.fallbackText(reply):reply.text||(stickerFile?'':reply.id?stickers.fallbackText(reply):'这次没有生成回复，请再试一次。');
         if(!text&&!stickerFile){if(task.kind==='group')console.log('QQ 群聊决策：',JSON.stringify({reason:'sticker_only_unavailable',stickerReason:stickers.status.reason}));continue;}
         const voiceSent = text ? await maybeSendVoice(task, text) : false;
-        if (!voiceSent) { sendAnswer(task,text,stickerFile); recordAssistant(task, text); } else recordAssistant(task, text);
+        if (!voiceSent) sendAnswer(task,text,stickerFile);
+        recordAssistant(task, text);
         if(task.kind==='group')console.log('QQ 群聊决策：',JSON.stringify({reason:'reply_ready',mentioned:Boolean(task.mentioned)}));
         if(stickerFile)console.log('QQ 网络表情：',JSON.stringify({ok:true,source:stickers.status.source}));
         if (task.kind === 'group') lastGroupReply.set(task.groupId, Date.now());
@@ -354,6 +374,11 @@ function receive(event) {
     : '';
   const directed = kind === 'group' && isDirectGroupMessage({ mentioned, text });
   const task = { kind, userId, groupId, sessionKey, speakerName, privateNickname, text, mentioned, directed, mentionOnly, imageUrls:input.imageUrls,mediaKind:input.mediaKind,mediaError:input.error,collectibleIndexes:input.imageIndexes,markedStickerIndexes:input.collectibleIndexes };
+  try {
+    task.turnId = conversationAudit.recordIncoming({ sessionKey, kind, text });
+  } catch (error) {
+    console.error('审计消息记录失败：', error.message);
+  }
   try { observeRelationship(task); }
   catch (error) { console.error('关系状态更新失败：', error.message); }
   const explicitReminderCommand = /(?:提醒我|请提醒|提醒一下|查询提醒|查看提醒|我的提醒|取消提醒|删除提醒|停止提醒)/.test(text);

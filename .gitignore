@@ -10,6 +10,8 @@ authorized_keys
 *.bak*
 *.save*
 node_modules/
+__pycache__/
+*.pyc
 qq-memory/
 qq-user-memory/
 qq-relationship/
