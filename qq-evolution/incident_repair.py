@@ -1,4 +1,4 @@
-"""Fixed production repair operations. Invoked only over the existing authenticated SSH path."""
+"""Fixed production repair operations. Source is sent over authenticated SSH stdin."""
 import datetime,json,os,re,shutil,subprocess,sys
 from pathlib import Path
 
@@ -29,4 +29,3 @@ def repair(action):
     subprocess.run(['/usr/bin/systemctl','restart',unit],check=True,timeout=60)
     print(json.dumps({'action':action,'executed':True}))
 
-if __name__=='__main__':repair(sys.argv[1])
