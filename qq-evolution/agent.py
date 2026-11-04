@@ -2,12 +2,25 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 ALLOWED_CATEGORIES = {"repetition", "silence", "latency", "error", "unnatural", "privacy"}
 ALLOWED_CHANGE_TYPES = {"prompt", "rule", "code"}
 ALLOWED_FILES = re.compile(r"^(?:qq-[A-Za-z0-9._-]+\.mjs|qq-persona\.md|qq-[A-Za-z0-9._-]+\.test\.mjs)$")
+
+
+def _failure_code(returncode, stderr):
+    message = (stderr or "").lower()
+    if "not inside a trusted directory" in message:
+        return "untrusted_directory"
+    status = re.search(r"\bhttp(?: status)?\s*(401|403|429|500|502|503)\b", message)
+    if status:
+        return "http_" + status.group(1)
+    if "upstream access forbidden" in message:
+        return "upstream_forbidden"
+    return "exit_" + str(returncode)
 
 
 def parse_finding(raw):
@@ -54,9 +67,14 @@ def _invoke_fixed(prompt, cwd, runner=None, timeout=180, output_schema="finding.
     try:
         result = subprocess.run(args, input=prompt, text=True, capture_output=True, cwd=cwd, timeout=timeout, check=False)
         if result.returncode != 0:
+            print("codex-relay failed: " + _failure_code(result.returncode, result.stderr), file=sys.stderr, flush=True)
             return ""
         return Path(output_path).read_text(encoding="utf-8")
-    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
+    except subprocess.TimeoutExpired:
+        print("codex-relay failed: timeout", file=sys.stderr, flush=True)
+        return ""
+    except (OSError, UnicodeDecodeError) as error:
+        print("codex-relay failed: " + type(error).__name__, file=sys.stderr, flush=True)
         return ""
     finally:
         try:
