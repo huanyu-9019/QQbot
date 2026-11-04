@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+authorized_keys
+*.json
+*.log
+*.before*
+*.bak*
+*.save*
+node_modules/
+qq-memory/
+qq-user-memory/
+qq-relationship/
