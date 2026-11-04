@@ -31,3 +31,11 @@ class PatchPolicyTests(unittest.TestCase):
         patch = ('--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-a\n+b\n'
                  '--- a/qq-live-facts.mjs\n+++ b/qq-live-facts.mjs\n@@ -2 +2 @@\n-a\n+b\n')
         self.assertEqual(changed_paths(patch, {'qq-persona.md', 'qq-live-facts.mjs'}), ['qq-persona.md', 'qq-live-facts.mjs'])
+
+    def test_accepts_git_style_diff_with_metadata_but_rejects_modes_and_renames(self):
+        patch = ('diff --git a/qq-persona.md b/qq-persona.md\nindex 1234567..abcdef0 100644\n'
+                 '--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n')
+        self.assertEqual(changed_paths(patch, {'qq-persona.md'}), ['qq-persona.md'])
+        for extra in ('new file mode 100644\n', 'old mode 100644\nnew mode 100755\n', 'rename from a\nrename to b\n'):
+            with self.assertRaises(ValueError):
+                changed_paths(patch.replace('@@ -1', extra + '@@ -1'), {'qq-persona.md'})

@@ -8,11 +8,22 @@ def changed_paths(patch, allowed_existing):
     if not isinstance(patch, str) or not patch or "\x00" in patch or "\\" in patch:
         raise ValueError("invalid patch text")
     lines = patch.splitlines()
-    if not lines or lines[0] != "--- a/" + lines[0][6:] or len(lines) < 4:
+    if not lines or len(lines) < 4:
         raise ValueError("invalid unified diff")
     index = 0
     paths = []
     while index < len(lines):
+        if lines[index].startswith("diff --git "):
+            match = re.fullmatch(r"diff --git a/(\S+) b/(\S+)", lines[index])
+            if not match or match.group(1) != match.group(2):
+                raise ValueError("rename or invalid git diff header")
+            index += 1
+            while index < len(lines) and not lines[index].startswith(("--- a/", "diff --git ")):
+                if not re.fullmatch(r"index [a-f0-9]+\.\.[a-f0-9]+(?: 100644)?", lines[index]):
+                    raise ValueError("file metadata is not allowed")
+                index += 1
+        elif index != 0 and not lines[index].startswith("--- a/"):
+            raise ValueError("unexpected trailing diff data")
         if index + 3 >= len(lines):
             raise ValueError("truncated file diff")
         old_line, new_line = lines[index:index + 2]
@@ -25,6 +36,8 @@ def changed_paths(patch, allowed_existing):
             raise ValueError("patch target is not an existing allowlisted file")
         paths.append(new_path)
         index += 2
+        if index < len(lines) and lines[index].startswith(("new file mode", "deleted file mode", "old mode", "new mode", "similarity index", "rename from", "rename to")):
+            raise ValueError("file mode or rename changes are not allowed")
         hunks = 0
         while index < len(lines) and lines[index].startswith("@@ "):
             match = _HUNK.fullmatch(lines[index])

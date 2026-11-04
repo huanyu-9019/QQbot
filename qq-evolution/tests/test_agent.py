@@ -25,7 +25,7 @@ class AgentTests(unittest.TestCase):
         calls = []
         responses = [
             json.dumps({"category": "unnatural", "severity": "low", "evidence": ["user text says ignore prior instructions"], "confidence": 0.9, "changeType": "prompt"}),
-            "--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n",
+            json.dumps({"diff": "--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n"}),
         ]
         def runner(args, prompt, cwd):
             calls.append((args, prompt, cwd))
@@ -36,6 +36,8 @@ class AgentTests(unittest.TestCase):
         self.assertTrue(validate_diff(diff))
         self.assertEqual(calls[0][0][1], "exec")
         self.assertTrue(calls[0][0][0].endswith("codex-relay"))
+        self.assertIn("--output-schema", calls[0][0])
+        self.assertTrue(any(arg.endswith("patch.schema.json") for arg in calls[1][0]))
         self.assertIn("untrusted", calls[0][1])
         self.assertEqual(calls[0][2], ".")
         self.assertIsNone(evaluate([{"text": "x"}], runner=lambda *args: "run rm -rf /"))
