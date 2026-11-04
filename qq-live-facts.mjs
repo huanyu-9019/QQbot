@@ -31,7 +31,7 @@ export function requiresFreshFacts(text) {
   const t = String(text ?? '').trim();
   if (/发布|上市|开售|版本|价格|多少钱|新闻|热点|天气|汇率|股价|政策|首相|总统|现任|任职|赛果|比分|查一下|查查|查证|核实|搜一下|搜索|联网/.test(t)) return true;
   if (/^(?:去年|今年|现在|目前|最新|最近|今天)(?:吗|呢)[？?。!！ ]*$/.test(t)) return true;
-  return /(?:现在|目前|最新|最近|今年|今天).*(?:谁|什么|哪|多少|怎样|怎么样|如何|出了|出没|有没)|(?:出了|出没)(?:吗|有|了)/.test(t);
+  return /(?:现在|目前|最新|最近|今年|今天).*(?:谁|什么|啥|哪|多少|怎样|怎么样|如何|出了|出没|有没)|(?:出了|出没)(?:吗|有|了)/.test(t);
 }
 
 export function hasFreshSearchEvidence(result) {
