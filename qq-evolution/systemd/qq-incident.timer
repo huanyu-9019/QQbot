@@ -1,0 +1,11 @@
+[Unit]
+Description=Check QQ reply health every minute
+
+[Timer]
+OnActiveSec=1s
+OnUnitActiveSec=60s
+AccuracySec=1s
+Unit=qq-incident.service
+
+[Install]
+WantedBy=timers.target

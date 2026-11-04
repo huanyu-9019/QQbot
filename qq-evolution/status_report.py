@@ -11,10 +11,10 @@ from pathlib import Path
 ROOT = Path('/home/admin/qq-evolution-state')
 SCHEDULE = ROOT / 'report-schedule.json'
 HEALTH = ROOT / 'monitor-health.json'
-SSH = ['/usr/bin/ssh','-i','/home/admin/.ssh/qq-evolution-prod','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','UpdateHostKeys=no','-o','ConnectTimeout=10','-o','ServerAliveInterval=10','-o','ServerAliveCountMax=2','root@39.105.219.112']
+SSH = ['/usr/bin/ssh','-i','/home/admin/.ssh/qq-evolution-prod','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','UpdateHostKeys=no','-o','ConnectionAttempts=1','-o','ConnectTimeout=8','-o','ServerAliveInterval=5','-o','ServerAliveCountMax=1','root@39.105.219.112']
 
 def remote_script(script, timeout=120):
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             result=subprocess.run(SSH+['python3 -'],input=script,text=True,capture_output=True,timeout=timeout,check=False)
         except subprocess.TimeoutExpired:
@@ -85,6 +85,17 @@ def main():
     except (FileNotFoundError,json.JSONDecodeError):
         assessment=None
     control['evaluation']='异常' if assessment in ('cycle_error','release_error','rolled_back') or health.get('outcome')=='locked_out' else '进行中' if assessment=='evaluating' else '待机' if health.get('outcome')=='cooldown' else '正常' if fresh else '待核实'
+    try:
+        incident=json.loads((ROOT/'incident.json').read_text())
+        incident_status=incident.get('status')
+        if incident_status in ('detected','repairing'):
+            control['evaluation']='自修中'
+        elif incident_status=='degraded':
+            control['evaluation']='故障待修'
+        elif incident_status in ('healthy','recovered') and incident.get('decisionSource')=='codex':
+            control['evaluation']='自修已验'
+    except (FileNotFoundError,json.JSONDecodeError):
+        pass
     script='import json,shutil,subprocess\nfrom pathlib import Path\n'+inspect.getsource(probe)+'\nprint(json.dumps(probe()))\n'
     script=script.replace('print(json.dumps(probe()))',
         "data=probe()\nr=subprocess.run(['/home/hermes/.hermes/tools/node-26.12.1-linux-x64/bin/node','/home/hermes/qq-model-health.mjs'],capture_output=True,text=True,timeout=75)\ntry: data['model']=json.loads(r.stdout)\nexcept (ValueError,TypeError): data['model']={}\nprint(json.dumps(data))")

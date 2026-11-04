@@ -1,0 +1,1 @@
+{"type":"object","additionalProperties":false,"required":["action","reason","diff"],"properties":{"action":{"enum":["use_deepseek","restart_api","restart_bridge","patch","none"]},"reason":{"type":"string","maxLength":1500},"diff":{"type":"string","maxLength":50000}}}

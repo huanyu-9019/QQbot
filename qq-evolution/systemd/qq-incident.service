@@ -1,0 +1,17 @@
+[Unit]
+Description=Detect real QQ failures and invoke server Codex recovery
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=admin
+WorkingDirectory=/home/admin/qq-evolution/control
+Environment=QQ_EVOLUTION_GIT_REMOTE=origin
+ExecStart=/usr/bin/python3 /home/admin/qq-evolution/control/incident.py
+TimeoutStartSec=900
+Restart=on-failure
+RestartSec=30
+UMask=0077
+MemoryMax=700M
+
