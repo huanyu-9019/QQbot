@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from agent import evaluate, parse_finding, propose_patch, validate_diff
+from agent import evaluate, evaluate_and_propose, parse_finding, propose_patch, validate_diff
 
 
 class AgentTests(unittest.TestCase):
@@ -41,6 +41,18 @@ class AgentTests(unittest.TestCase):
         self.assertIn("untrusted", calls[0][1])
         self.assertEqual(calls[0][2], ".")
         self.assertIsNone(evaluate([{"text": "x"}], runner=lambda *args: "run rm -rf /"))
+
+    def test_combined_cycle_uses_one_model_call_and_returns_valid_finding_and_diff(self):
+        calls = []
+        response = {"finding": {"category": "repetition", "severity": "medium", "evidence": ["same reply"], "confidence": 0.9, "changeType": "prompt"}, "diff": "--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n"}
+        def runner(args, prompt, cwd):
+            calls.append(args)
+            return json.dumps(response)
+        finding, diff = evaluate_and_propose([{"text": "synthetic"}], ".", runner=runner)
+        self.assertEqual(finding["category"], "repetition")
+        self.assertTrue(validate_diff(diff))
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(any(arg.endswith("cycle.schema.json") for arg in calls[0]))
 
 
 if __name__ == "__main__":

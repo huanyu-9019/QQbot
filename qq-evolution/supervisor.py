@@ -3,7 +3,7 @@ import time
 import subprocess
 from pathlib import Path
 
-from agent import evaluate, propose_patch
+from agent import evaluate_and_propose
 from collector import fetch_remote_events
 from daemon import EvolutionSupervisor, SingleJobLock, StateStore
 from metrics import aggregate
@@ -25,8 +25,8 @@ def run_cycle():
         metrics = aggregate(events, minimum_pairs=3)
         if not metrics["eligible"] or metrics["successRate"] >= 0.8 and metrics["repeatedReplies"] == 0:
             return ""
-        finding = evaluate(events[-80:], cwd="/home/admin/qq-evolution/github-publish")
-        return propose_patch(finding, "/home/admin/qq-evolution/github-publish") if finding else ""
+        finding, diff = evaluate_and_propose(events[-80:], cwd="/home/admin/qq-evolution/github-publish")
+        return diff if finding else ""
 
     def publish(diff):
         allowed_files = set()
