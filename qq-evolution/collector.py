@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 from pathlib import Path
 
 MAX_TEXT = 1200
@@ -69,3 +70,30 @@ def read_events(paths, cursor_path):
     temporary.write_text(json.dumps(next_cursor, sort_keys=True), encoding="utf-8")
     temporary.replace(cursor_file)
     return events, next_cursor
+
+
+def fetch_remote_events(host, remote_directory, runner=None, read_file=None):
+    if not re.fullmatch(r"[A-Za-z0-9_.@-]+", host) or remote_directory != "/home/hermes/qq-audit":
+        raise ValueError("remote source is fixed")
+    list_args = ["/usr/bin/ssh", "-i", "/home/admin/.ssh/qq-evolution-prod", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", host, "find /home/hermes/qq-audit -maxdepth 1 -type f -name '*.jsonl' -printf '%f\\n'"]
+    execute = runner or (lambda args: subprocess.run(args, text=True, capture_output=True, timeout=20, check=True).stdout)
+    names = execute(list_args).splitlines()
+    events = []
+    for name in sorted(names):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.jsonl", name):
+            continue
+        path = remote_directory.rstrip("/") + "/" + name
+        if read_file:
+            content = read_file(name)
+        else:
+            args = ["/usr/bin/ssh", "-i", "/home/admin/.ssh/qq-evolution-prod", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", host, "cat -- '" + path + "'"]
+            content = subprocess.run(args, text=True, capture_output=True, timeout=20, check=True).stdout
+        for line in content.splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            safe = sanitize_record(record)
+            if safe:
+                events.append(safe)
+    return events

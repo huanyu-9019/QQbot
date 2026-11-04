@@ -5,18 +5,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=hermes
-WorkingDirectory=/home/hermes/qq-evolution
-Environment=QQ_EVOLUTION_STATE=/home/hermes/qq-evolution-state/state.json
-Environment=QQ_EVOLUTION_LOCK=/home/hermes/qq-evolution-state/job.lock
-ExecStart=/usr/bin/python3 /home/hermes/qq-evolution/supervisor.py
+User=admin
+WorkingDirectory=/home/admin/qq-evolution/control
+Environment=PYTHONPATH=/home/admin/qq-evolution/control
+Environment=QQ_EVOLUTION_STATE=/home/admin/qq-evolution-state/state.json
+Environment=QQ_EVOLUTION_LOCK=/home/admin/qq-evolution-state/job.lock
+ExecStart=/usr/bin/python3 /home/admin/qq-evolution/control/supervisor.py
 Restart=always
 RestartSec=30
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false
-ReadWritePaths=/home/hermes/qq-evolution-state /home/hermes/qq-evolution-runtime
+ReadWritePaths=/home/admin/qq-evolution-state /home/admin/qq-evolution-runtime
 MemoryMax=700M
 CPUQuota=80%
 

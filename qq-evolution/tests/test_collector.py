@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from collector import read_events, redact_text, sanitize_record
+from collector import fetch_remote_events, read_events, redact_text, sanitize_record
 
 
 class CollectorTests(unittest.TestCase):
@@ -38,6 +38,19 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual([row["text"] for row in first], ["one", "two"])
             self.assertEqual(second, [])
             self.assertTrue(cursor_path.exists())
+
+    def test_remote_fetch_uses_validated_daily_filenames_and_sanitizes_before_return(self):
+        calls = []
+        raw = json.dumps({"timestamp": 1, "direction": "incoming", "kind": "private", "sessionHash": "a" * 64, "text": "my phone 13812345678", "turnId": "1"})
+        def runner(args):
+            calls.append(args)
+            return "2026-11-04.jsonl\n../secret\n"
+        def read_file(name):
+            self.assertEqual(name, "2026-11-04.jsonl")
+            return raw + "\n"
+        events = fetch_remote_events("root@host", "/home/hermes/qq-audit", runner=runner, read_file=read_file)
+        self.assertEqual(events[0]["text"], "my phone [REDACTED_PHONE]")
+        self.assertEqual(calls[0][0], "/usr/bin/ssh")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 import json
+import os
 import re
 import subprocess
+import tempfile
+from pathlib import Path
 
 ALLOWED_CATEGORIES = {"repetition", "silence", "latency", "error", "unnatural", "privacy"}
 ALLOWED_CHANGE_TYPES = {"prompt", "rule", "code"}
@@ -39,13 +42,27 @@ def validate_diff(diff):
 
 
 def _invoke_fixed(prompt, cwd, runner=None, timeout=180):
-    args = ["codex-relay", "exec", "--sandbox", "read-only", "--color", "never", "-"]
+    output_path = None
+    if runner:
+        args = ["/home/admin/bin/codex-relay", "exec", "--sandbox", "read-only", "--ephemeral", "--color", "never", "-"]
+    else:
+        handle, output_path = tempfile.mkstemp(prefix="qq-eval-", suffix=".txt")
+        os.close(handle)
+        args = ["/home/admin/bin/codex-relay", "exec", "--sandbox", "read-only", "--ephemeral", "--color", "never", "--output-last-message", output_path, "-"]
     if runner:
         return runner(args, prompt, cwd)
-    result = subprocess.run(args, input=prompt, text=True, capture_output=True, cwd=cwd, timeout=timeout, check=False)
-    if result.returncode != 0:
+    try:
+        result = subprocess.run(args, input=prompt, text=True, capture_output=True, cwd=cwd, timeout=timeout, check=False)
+        if result.returncode != 0:
+            return ""
+        return Path(output_path).read_text(encoding="utf-8")
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
         return ""
-    return result.stdout
+    finally:
+        try:
+            os.unlink(output_path)
+        except OSError:
+            pass
 
 
 def evaluate(events, cwd=".", runner=None):

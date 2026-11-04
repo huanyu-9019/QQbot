@@ -12,6 +12,7 @@ authorized_keys
 node_modules/
 __pycache__/
 *.pyc
+*.bundle
 qq-memory/
 qq-user-memory/
 qq-relationship/
