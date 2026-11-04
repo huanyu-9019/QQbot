@@ -11,7 +11,21 @@ from pathlib import Path
 ROOT = Path('/home/admin/qq-evolution-state')
 SCHEDULE = ROOT / 'report-schedule.json'
 HEALTH = ROOT / 'monitor-health.json'
-SSH = ['/usr/bin/ssh','-i','/home/admin/.ssh/qq-evolution-prod','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=10','root@39.105.219.112']
+SSH = ['/usr/bin/ssh','-i','/home/admin/.ssh/qq-evolution-prod','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','UpdateHostKeys=no','-o','ConnectTimeout=10','-o','ServerAliveInterval=10','-o','ServerAliveCountMax=2','root@39.105.219.112']
+
+def remote_script(script, timeout=120):
+    for attempt in range(3):
+        try:
+            result=subprocess.run(SSH+['python3 -'],input=script,text=True,capture_output=True,timeout=timeout,check=False)
+        except subprocess.TimeoutExpired:
+            print('remote report attempt timed out',flush=True)
+            continue
+        if result.returncode==0:
+            return json.loads(result.stdout)
+        print('remote report attempt failed: exit='+str(result.returncode),flush=True)
+        if result.returncode!=255:
+            break
+    raise RuntimeError('remote status/publish failed after retries')
 
 def report_slot(start, now):
     elapsed=max(0,int(now)-int(start))
@@ -35,8 +49,12 @@ def format_report(control, production, now):
     dt=datetime.datetime.fromtimestamp(now,datetime.timezone(datetime.timedelta(hours=8)))
     def resources(row):
         return f"内存余{row['memoryFree']}/{row['memoryTotal']}M，盘余{row['diskFree']}/{row['diskTotal']}G，换页余{row['swapFree']}M"
-    text=(f"{dt.month}月{dt.day}日{dt:%H:%M} 双机巡检：Codex机在线，监听{control['monitor']}、评估{control['evaluation']}，{resources(control)}。"
-          f"QQ机在线，机器人{'正常' if production['bridge'] else '异常'}、API{'正常' if production['api'] else '异常'}，{resources(production)}。")
+    model=production.get('model',{})
+    reply='可回复' if model.get('reply') else '回复异常'
+    path='主链正常' if model.get('primary') else '主链故障'
+    backup='DeepSeek可用' if model.get('deepseek') else 'DeepSeek异常'
+    text=(f"{dt.month}月{dt.day}日{dt:%H:%M} Codex机监听{control['monitor']}、评估{control['evaluation']}，{resources(control)}。"
+          f"QQ机进程{'在' if production['bridge'] else '停'}、API{'在' if production['api'] else '异常'}、{reply}，{path}，{backup}，{resources(production)}。")
     if not 25<=len(text)<=140:
         raise ValueError('public status report length invalid')
     return text
@@ -68,10 +86,11 @@ def main():
         assessment=None
     control['evaluation']='异常' if assessment in ('cycle_error','release_error','rolled_back') or health.get('outcome')=='locked_out' else '进行中' if assessment=='evaluating' else '待机' if health.get('outcome')=='cooldown' else '正常' if fresh else '待核实'
     script='import json,shutil,subprocess\nfrom pathlib import Path\n'+inspect.getsource(probe)+'\nprint(json.dumps(probe()))\n'
-    result=subprocess.run(SSH+['python3 -'],input=script,text=True,capture_output=True,timeout=50,check=True)
-    production=json.loads(result.stdout)
+    script=script.replace('print(json.dumps(probe()))',
+        "data=probe()\nr=subprocess.run(['/home/hermes/.hermes/tools/node-26.12.1-linux-x64/bin/node','/home/hermes/qq-model-health.mjs'],capture_output=True,text=True,timeout=75)\ntry: data['model']=json.loads(r.stdout)\nexcept (ValueError,TypeError): data['model']={}\nprint(json.dumps(data))")
+    production=remote_script(script)
     report=format_report(control,production,now)
-    ident='dual-status-'+str(schedule['start'])+'-'+slot
+    ident='dual-health-'+str(schedule['start'])+'-'+slot
     publish_script=(
         'import json,subprocess\nfrom pathlib import Path\n'
         f'r=subprocess.run(["/home/hermes/.hermes/tools/node-26.12.1-linux-x64/bin/node","/home/hermes/qq-qzone-post.mjs","--publish-update",{ident!r}],input={report!r},text=True,capture_output=True,timeout=100)\n'
@@ -79,8 +98,8 @@ def main():
         f'v=s.get("publishedUpdates",{{}}).get({ident!r},{{}})\n'
         'print(json.dumps({"sent":v.get("status")=="sent" and bool(v.get("tid")),"publisher_exit":r.returncode}))\n'
     )
-    sent=subprocess.run(SSH+['python3 -'],input=publish_script,text=True,capture_output=True,timeout=130,check=True)
-    if not json.loads(sent.stdout).get('sent'):
+    sent=remote_script(publish_script,timeout=130)
+    if not sent.get('sent'):
         raise RuntimeError('QQ Space publication unconfirmed')
     schedule['lastSentSlot']=slot
     schedule['lastSentAt']=now

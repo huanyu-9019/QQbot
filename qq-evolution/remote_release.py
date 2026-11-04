@@ -23,6 +23,7 @@ FILES = [
     "qq-qzone-post.mjs", "qq-stickers.mjs", "qq-group-style.mjs",
     "qq-space-disk-report.mjs",
     "qq-qzone-lock.mjs",
+    "qq-model-fallback.mjs", "qq-model-health.mjs",
 ]
 SNAPSHOT_FILES = sorted(FILES + [
     "qq-gemini-tts.test.mjs", "qq-group-routing.test.mjs", "qq-live-facts.test.mjs",
@@ -31,6 +32,7 @@ SNAPSHOT_FILES = sorted(FILES + [
     "qq-conversation-audit.test.mjs",
     "qq-group-style.test.mjs", "qq-space-disk-report.test.mjs",
     "qq-qzone-lock.test.mjs",
+    "qq-model-fallback.test.mjs",
 ])
 
 

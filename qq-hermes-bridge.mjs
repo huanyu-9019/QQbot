@@ -18,6 +18,7 @@ import { liveFactReply, requiresFreshFacts, hasFreshSearchEvidence } from './qq-
 import { fetchFemaleSongClip, songIntent } from './qq-song-clips.mjs';
 import { createConversationAudit } from './qq-conversation-audit.mjs';
 import { createGroupStyleLearning, safeStyleInstructions } from './qq-group-style.mjs';
+import {withLastFallback,deepSeekReply} from './qq-model-fallback.mjs';
 
 
 const env = readFileSync(`${process.env.HOME}/.hermes/.env`, 'utf8');
@@ -158,6 +159,17 @@ reminderScheduler = createReminderScheduler({
 });
 
 async function askHermes(task) {
+  return withLastFallback(()=>askHermesPrimary(task),async()=>{
+    if(task.signal?.aborted)throw Error('request cancelled');
+    if(task.collectionOnly)return '<QQ_SILENT>';
+    console.log('QQ 模型降级：DeepSeek');
+    const messages=buildMessages(task,{groupStyleInstructions:safeStyleInstructions(groupStyle,task)});
+    messages.unshift({role:'system',content:'当前为备用文字聊天通道，没有联网或图片识别工具。不能声称已搜索或已看图；时效事实无法核实时直说未核实，保留自然聊天语气。'});
+    return deepSeekReply(messages,{signal:task.signal});
+  });
+}
+
+async function askHermesPrimary(task) {
   const headers = { Authorization: `Bearer ${apiKey}` };
   const toolsetCheckStartedAt = Date.now();
   await assertSearchOnlyAccess(api, headers);
@@ -177,7 +189,7 @@ async function askHermes(task) {
       model: 'hermes-agent',
       ...(verifyFresh ? {input:messages,store:false} : {messages}),
     }),
-    signal: task.signal?AbortSignal.any([task.signal,AbortSignal.timeout(task.timeoutMs||120000)]):AbortSignal.timeout(120000),
+    signal: task.signal?AbortSignal.any([task.signal,AbortSignal.timeout(Math.min(task.timeoutMs||30000,30000))]):AbortSignal.timeout(30000),
   });
   if (!response.ok) throw new Error(`Hermes HTTP ${response.status}`);
   const modelRequestMs = Date.now() - modelRequestStartedAt;
@@ -191,6 +203,7 @@ async function askHermes(task) {
     return silent ? text : verified && text ? text : '这条我还没核实到最新消息，先不乱说。';
   }
   const choice = result.choices?.[0];
+  if(!choice?.message?.content?.trim())throw new Error('Hermes empty reply');
   if (choice?.finish_reason === 'error' || choice?.finish_reason === 'cancelled') {
     throw new Error('Hermes 本轮未成功完成');
   }

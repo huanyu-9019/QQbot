@@ -21,3 +21,9 @@ class StatusReportTests(unittest.TestCase):
         self.assertIn('API异常',text)
         self.assertLessEqual(len(text),140)
         self.assertNotIn('root@',text)
+
+    def test_active_services_with_failed_models_are_reported_unhealthy(self):
+        sample={'memoryFree':500,'memoryTotal':890,'diskFree':22,'diskTotal':29,'swapFree':2048,'swapTotal':2048,'online':True}
+        text=format_report(sample|{'monitor':'正常','evaluation':'正常'},sample|{'bridge':True,'api':True,'model':{'reply':False,'primary':False,'deepseek':False}},0)
+        self.assertIn('回复异常',text)
+        self.assertIn('主链故障',text)
