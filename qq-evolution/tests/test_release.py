@@ -29,7 +29,9 @@ class ReleaseTests(unittest.TestCase):
             source.mkdir()
             file = source / "qq-persona.md"
             file.write_text("old", encoding="utf-8")
-            manager = ReleaseManager(source, snapshots, ["qq-persona.md"], restart=lambda: None, health=lambda: False)
+            def apply_diff(root, diff):
+                (Path(root) / "qq-persona.md").write_text("new", encoding="utf-8")
+            manager = ReleaseManager(source, snapshots, ["qq-persona.md"], restart=lambda: None, health=lambda: False, apply_diff=apply_diff)
             artifact = "--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n"
             with self.assertRaises(RuntimeError):
                 manager.apply(artifact)
