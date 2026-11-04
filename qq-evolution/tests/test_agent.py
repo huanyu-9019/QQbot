@@ -4,10 +4,15 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from agent import evaluate, evaluate_and_propose, parse_finding, propose_patch, validate_diff
+from agent import _failure_code, evaluate, evaluate_and_propose, parse_finding, propose_patch, validate_diff
 
 
 class AgentTests(unittest.TestCase):
+    def test_failure_code_reports_only_safe_cli_error_categories(self):
+        self.assertEqual(_failure_code(1, "Not inside a trusted directory"), "untrusted_directory")
+        self.assertEqual(_failure_code(1, "HTTP 502: Upstream access forbidden"), "http_502")
+        self.assertEqual(_failure_code(7, "request body with private user text"), "exit_7")
+
     def test_parses_only_schema_valid_findings(self):
         finding = parse_finding(json.dumps({"category": "repetition", "severity": "medium", "evidence": ["same"], "confidence": 0.8, "changeType": "prompt"}))
         self.assertEqual(finding["category"], "repetition")
