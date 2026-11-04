@@ -13,6 +13,7 @@ node_modules/
 __pycache__/
 *.pyc
 *.bundle
+!qq-evolution/*.schema.json
 qq-memory/
 qq-user-memory/
 qq-relationship/
