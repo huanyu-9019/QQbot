@@ -83,10 +83,12 @@ def fetch_remote_events(host, remote_directory, runner=None, read_file=None):
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.jsonl", name):
             continue
         path = remote_directory.rstrip("/") + "/" + name
-        if read_file:
+        args = ["/usr/bin/ssh", "-i", "/home/admin/.ssh/qq-evolution-prod", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", host, "tail -n 2000 -- '" + path + "'"]
+        if runner:
+            content = runner(args)
+        elif read_file:
             content = read_file(name)
         else:
-            args = ["/usr/bin/ssh", "-i", "/home/admin/.ssh/qq-evolution-prod", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", host, "cat -- '" + path + "'"]
             content = subprocess.run(args, text=True, capture_output=True, timeout=20, check=True).stdout
         for line in content.splitlines():
             try:

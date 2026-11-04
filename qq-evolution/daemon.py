@@ -75,10 +75,16 @@ class EvolutionSupervisor:
                 current["status"] = "no_change"
                 self.state.save(current)
                 return "no_change"
-            if not publish(artifact):
+            publish_result = publish(artifact)
+            if publish_result is False or publish_result == "rejected":
                 current["status"] = "rejected"
                 self.state.save(current)
                 return "rejected"
+            if publish_result in {"rolled_back", "release_error"}:
+                current["rollbackFailures"] = int(current.get("rollbackFailures", 0)) + 1
+                current["status"] = publish_result
+                self.state.save(current)
+                return publish_result
             current["status"] = "published"
             current["rollbackFailures"] = 0
             self.state.save(current)

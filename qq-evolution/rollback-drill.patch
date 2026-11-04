@@ -1,0 +1,5 @@
+--- a/qq-hermes-bridge.mjs
++++ b/qq-hermes-bridge.mjs
+@@ -1 +1,2 @@
++/* intentional rollback drill
+ import { readFileSync } from 'node:fs';

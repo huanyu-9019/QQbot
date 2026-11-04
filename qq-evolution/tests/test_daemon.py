@@ -35,6 +35,13 @@ class DaemonTests(unittest.TestCase):
             supervisor.record_rollback_failure()
             self.assertEqual(supervisor.run_once(lambda: "patch", lambda patch: True, now=200), "locked_out")
 
+    def test_rolled_back_release_increments_failure_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.json")
+            supervisor = EvolutionSupervisor(state, SingleJobLock(Path(tmp) / "job.lock"), cooldown=0)
+            self.assertEqual(supervisor.run_once(lambda: "patch", lambda patch: "rolled_back", now=1), "rolled_back")
+            self.assertEqual(state.load()["rollbackFailures"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

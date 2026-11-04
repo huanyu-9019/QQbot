@@ -44,13 +44,11 @@ class CollectorTests(unittest.TestCase):
         raw = json.dumps({"timestamp": 1, "direction": "incoming", "kind": "private", "sessionHash": "a" * 64, "text": "my phone 13812345678", "turnId": "1"})
         def runner(args):
             calls.append(args)
-            return "2026-11-04.jsonl\n../secret\n"
-        def read_file(name):
-            self.assertEqual(name, "2026-11-04.jsonl")
-            return raw + "\n"
-        events = fetch_remote_events("root@host", "/home/hermes/qq-audit", runner=runner, read_file=read_file)
+            return "2026-11-04.jsonl\n../secret\n" if len(calls) == 1 else raw + "\n"
+        events = fetch_remote_events("root@host", "/home/hermes/qq-audit", runner=runner)
         self.assertEqual(events[0]["text"], "my phone [REDACTED_PHONE]")
         self.assertEqual(calls[0][0], "/usr/bin/ssh")
+        self.assertIn("tail -n 2000", calls[1][-1])
 
 
 if __name__ == "__main__":
