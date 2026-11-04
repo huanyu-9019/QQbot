@@ -14,7 +14,7 @@ import {createProactiveScheduler} from './qq-proactive.mjs';
 import {createReminderScheduler,handleReminderCommand} from './qq-reminders.mjs';
 import {isDirectGroupMessage} from './qq-group-routing.mjs';
 import { synthesizeMiniMax, toOneBotAudio, shouldSendVoice, createVoiceLimiter, cleanupVoiceFiles } from './qq-gemini-tts.mjs';
-import { liveFactReply } from './qq-live-facts.mjs';
+import { liveFactReply, requiresFreshFacts, hasFreshSearchEvidence } from './qq-live-facts.mjs';
 import { fetchFemaleSongClip, songIntent } from './qq-song-clips.mjs';
 import { createConversationAudit } from './qq-conversation-audit.mjs';
 
@@ -158,7 +158,9 @@ async function askHermes(task) {
   const toolsetCheckMs = Date.now() - toolsetCheckStartedAt;
   const modelRequestStartedAt = Date.now();
 
-  const response = await fetch(`${api}/v1/chat/completions`, {
+  const verifyFresh = !task.collectionOnly && !task.trigger && requiresFreshFacts(task.text);
+  const messages = buildMessages(task,{stickerInstructions:stickers.instructions(),learningInstructions:collection.instructions(task),recentImageInstructions:recentImages.instructions(task)});
+  const response = await fetch(`${api}/v1/${verifyFresh ? 'responses' : 'chat/completions'}`, {
     method: 'POST',
     headers: {
       ...headers,
@@ -167,13 +169,21 @@ async function askHermes(task) {
     },
     body: JSON.stringify({
       model: 'hermes-agent',
-      messages: buildMessages(task,{stickerInstructions:stickers.instructions(),learningInstructions:collection.instructions(task),recentImageInstructions:recentImages.instructions(task)}),
+      ...(verifyFresh ? {input:messages,store:false} : {messages}),
     }),
     signal: task.signal?AbortSignal.any([task.signal,AbortSignal.timeout(task.timeoutMs||120000)]):AbortSignal.timeout(120000),
   });
   if (!response.ok) throw new Error(`Hermes HTTP ${response.status}`);
   const modelRequestMs = Date.now() - modelRequestStartedAt;
   const result = await response.json();
+  if (verifyFresh) {
+    if (result.status !== 'completed') throw new Error('Hermes 时效查询未完成');
+    const verified = hasFreshSearchEvidence(result);
+    const text = (result.output ?? []).filter(x => x.type === 'message' && x.role === 'assistant').flatMap(x => x.content ?? []).filter(x => x.type === 'output_text').map(x => x.text ?? '').join('\n').trim();
+    const silent = text === '<QQ_SILENT>';
+    console.log('QQ 时效核实：',JSON.stringify({kind:task.kind,verified,silent}));
+    return silent ? text : verified && text ? text : '这条我还没核实到最新消息，先不乱说。';
+  }
   const choice = result.choices?.[0];
   if (choice?.finish_reason === 'error' || choice?.finish_reason === 'cancelled') {
     throw new Error('Hermes 本轮未成功完成');

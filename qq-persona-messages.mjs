@@ -1,5 +1,6 @@
 import { persona, recall } from './qq-memory.mjs';
 import {userContent} from './qq-media.mjs';
+import { currentFactsContext } from './qq-live-facts.mjs';
 
 export function buildMessages(task,options={}) {
   if(task.trigger==='typing')return [
@@ -34,6 +35,7 @@ export function buildMessages(task,options={}) {
     role: 'system',
     content: [
       persona,
+      currentFactsContext(options.now ?? new Date()),
       options.stickerInstructions||'',
       options.recentImageInstructions||'',
       task.images?.length

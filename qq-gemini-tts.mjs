@@ -26,7 +26,7 @@ export function pcmToWav(pcm, sampleRate = 24000, channels = 1, bitsPerSample = 
 export function shouldSendVoice({ kind, text, random = Math.random, now = Date.now(), lastSentAt = -Infinity, dailyCount = 0 }) {
   const value = String(text ?? '').trim();
   if (!value || value === '<QQ_SILENT>' || value.length > MAX_VOICE_CHARS) return false;
-  if (dailyCount >= 10 || now - lastSentAt < VOICE_COOLDOWN_MS) return false;
+  if (now - lastSentAt < VOICE_COOLDOWN_MS) return false;
   const chance = kind === 'group' ? 0.45 : 0.75;
   return random() < chance;
 }
@@ -38,7 +38,6 @@ export function createVoiceLimiter({ dailyLimit = 10 } = {}) {
     allow(now = Date.now()) {
       const current = new Date(now).toISOString().slice(0, 10);
       if (current !== day) { day = current; count = 0; }
-      if (count >= dailyLimit) return false;
       count += 1;
       return true;
     },

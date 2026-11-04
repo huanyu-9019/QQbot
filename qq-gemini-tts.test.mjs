@@ -19,10 +19,9 @@ test('voice policy keeps short replies occasional and respects cooldown', () => 
   assert.equal(shouldSendVoice({ kind: 'group', text: '这是一段很长的回复'.repeat(100), random: () => 0, now: 700000, lastSentAt: -Infinity, dailyCount: 0 }), false);
 });
 
-test('daily limiter stops after ten generated voices', () => {
-  const limiter = createVoiceLimiter({ dailyLimit: 10 });
-  for (let i = 0; i < 10; i++) assert.equal(limiter.allow(0), true);
-  assert.equal(limiter.allow(0), false);
+test('voice limiter has no daily cap', () => {
+  const limiter = createVoiceLimiter();
+  for (let i = 0; i < 25; i++) assert.equal(limiter.allow(0), true);
 });
 
 test('extracts MiniMax base64 WAV audio', async () => {
