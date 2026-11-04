@@ -50,6 +50,18 @@ def advance_baseline(diff, repo):
     for index, command in enumerate(commands):
         subprocess.run(command, input=diff if index == 0 else None, text=True,
                        capture_output=True, cwd=repo, timeout=30, check=True)
+    push_archive(repo)
+
+
+def push_archive(repo):
+    remote = os.environ.get("QQ_EVOLUTION_GIT_REMOTE")
+    if not remote:
+        return
+    try:
+        subprocess.run(["git", "push", remote, "HEAD:refs/heads/codex/qq-autonomous-evolution"],
+                       text=True, capture_output=True, cwd=repo, timeout=30, check=True)
+    except (subprocess.SubprocessError, OSError):
+        print("qq-evolution archive pending", flush=True)
 
 
 def run_cycle():
@@ -57,6 +69,7 @@ def run_cycle():
     lock = SingleJobLock(LOCK)
     supervisor = EvolutionSupervisor(state, lock, cooldown=int(os.environ.get("QQ_EVOLUTION_COOLDOWN", "1800")))
     repo = development_repo()
+    push_archive(repo)
 
     def evaluate_window():
         events = fetch_remote_events(PRODUCTION_HOST, "/home/hermes/qq-audit")

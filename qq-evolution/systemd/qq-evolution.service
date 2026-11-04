@@ -10,6 +10,7 @@ WorkingDirectory=/home/admin/qq-evolution/control
 Environment=PYTHONPATH=/home/admin/qq-evolution/control
 Environment=QQ_EVOLUTION_STATE=/home/admin/qq-evolution-state/state.json
 Environment=QQ_EVOLUTION_LOCK=/home/admin/qq-evolution-state/job.lock
+Environment=QQ_EVOLUTION_GIT_REMOTE=origin
 ExecStart=/usr/bin/python3 /home/admin/qq-evolution/control/supervisor.py
 Restart=always
 RestartSec=30

@@ -21,10 +21,14 @@ class SupervisorTests(unittest.TestCase):
             subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@localhost", "commit", "-qm", "initial"], cwd=repo, check=True)
             (repo / "other.txt").write_text("unrelated\n")
             diff = "--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n"
-            advance_baseline(diff, repo)
+            remote = repo / "archive.git"
+            subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+            with patch.dict(os.environ, {"QQ_EVOLUTION_GIT_REMOTE": str(remote)}):
+                advance_baseline(diff, repo)
             self.assertEqual(subprocess.check_output(["git", "show", "HEAD:qq-persona.md"], cwd=repo, text=True), "new\n")
             self.assertEqual(subprocess.check_output(["git", "show", "HEAD:other.txt"], cwd=repo, text=True), "original\n")
             self.assertEqual((repo / "other.txt").read_text(), "unrelated\n")
+            self.assertEqual(subprocess.check_output(["git", "--git-dir", str(remote), "show", "refs/heads/codex/qq-autonomous-evolution:qq-persona.md"], text=True), "new\n")
 
     def test_successful_nonrepeated_replies_still_receive_quality_assessment(self):
         events = []

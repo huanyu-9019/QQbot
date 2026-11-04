@@ -7,6 +7,17 @@ from daemon import EvolutionSupervisor, StateStore, SingleJobLock
 
 
 class DaemonTests(unittest.TestCase):
+    def test_repeated_failed_releases_back_off_then_resume_without_human_reset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.json")
+            supervisor = EvolutionSupervisor(state, SingleJobLock(Path(tmp) / "job.lock"), cooldown=0, failure_backoff=100)
+            self.assertEqual(supervisor.run_once(lambda: "patch", lambda _: "rolled_back", now=10), "rolled_back")
+            self.assertEqual(supervisor.run_once(lambda: "patch", lambda _: "rolled_back", now=20), "rolled_back")
+            self.assertEqual(supervisor.run_once(lambda: "patch", lambda _: "published", now=30), "locked_out")
+            self.assertEqual(supervisor.run_once(lambda: "patch", lambda _: "published", now=119), "locked_out")
+            self.assertEqual(supervisor.run_once(lambda: "patch", lambda _: "published", now=120), "published")
+            self.assertEqual(state.load()["rollbackFailures"], 0)
+
     def test_state_store_survives_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"

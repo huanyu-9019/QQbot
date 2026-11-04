@@ -67,11 +67,12 @@ class SingleJobLock:
 
 
 class EvolutionSupervisor:
-    def __init__(self, state, lock, cooldown=900, max_rollback_failures=2):
+    def __init__(self, state, lock, cooldown=900, max_rollback_failures=2, failure_backoff=21600):
         self.state = state
         self.lock = lock
         self.cooldown = cooldown
         self.max_rollback_failures = max_rollback_failures
+        self.failure_backoff = failure_backoff
 
     def record_rollback_failure(self):
         current = self.state.load()
@@ -81,7 +82,11 @@ class EvolutionSupervisor:
     def run_once(self, evaluate, publish, now):
         current = self.state.load()
         if int(current.get("rollbackFailures", 0)) >= self.max_rollback_failures:
-            return "locked_out"
+            retry_after = int(current.get("retryAfter", int(current.get("lastRun", now)) + self.failure_backoff))
+            if now < retry_after:
+                return "locked_out"
+            current["rollbackFailures"] = 0
+            current.pop("retryAfter", None)
         if now - int(current.get("lastRun", -10**18)) < self.cooldown:
             return "cooldown"
         if not self.lock.acquire():
@@ -102,11 +107,14 @@ class EvolutionSupervisor:
                 return "rejected"
             if publish_result in {"rolled_back", "release_error"}:
                 current["rollbackFailures"] = int(current.get("rollbackFailures", 0)) + 1
+                if current["rollbackFailures"] >= self.max_rollback_failures:
+                    current["retryAfter"] = now + self.failure_backoff
                 current["status"] = publish_result
                 self.state.save(current)
                 return publish_result
             current["status"] = "published"
             current["rollbackFailures"] = 0
+            current.pop("retryAfter", None)
             self.state.save(current)
             return "published"
         finally:
