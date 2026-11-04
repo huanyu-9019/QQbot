@@ -42,6 +42,14 @@ class DaemonTests(unittest.TestCase):
             self.assertEqual(supervisor.run_once(lambda: "patch", lambda patch: "rolled_back", now=1), "rolled_back")
             self.assertEqual(state.load()["rollbackFailures"], 1)
 
+    def test_single_job_lock_recovers_stale_dead_process_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_path = Path(tmp) / "job.lock"
+            lock_path.write_text("99999999", encoding="utf-8")
+            lock = SingleJobLock(lock_path)
+            self.assertTrue(lock.acquire())
+            lock.release()
+
 
 if __name__ == "__main__":
     unittest.main()

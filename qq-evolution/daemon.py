@@ -1,4 +1,5 @@
 import json
+import errno
 import os
 from pathlib import Path
 
@@ -34,7 +35,26 @@ class SingleJobLock:
             self.handle.flush()
             return True
         except FileExistsError:
-            return False
+            try:
+                owner = int(self.path.read_text(encoding="utf-8").strip())
+                os.kill(owner, 0)
+                return False
+            except (ValueError, FileNotFoundError):
+                pass
+            except OSError as error:
+                if error.errno != errno.ESRCH and getattr(error, "winerror", None) != 87:
+                    return False
+            try:
+                self.path.unlink()
+            except FileNotFoundError:
+                pass
+            try:
+                self.handle = self.path.open("x", encoding="utf-8")
+                self.handle.write(str(os.getpid()))
+                self.handle.flush()
+                return True
+            except FileExistsError:
+                return False
 
     def release(self):
         if self.handle:
