@@ -1,4 +1,6 @@
 import os
+import hashlib
+import json
 import time
 import subprocess
 from pathlib import Path
@@ -19,11 +21,11 @@ def development_repo():
     return Path(os.environ.get("QQ_EVOLUTION_REPO", "/home/admin/qq-evolution/development"))
 
 
-def assess_events(events, repo, evaluator=evaluate_and_propose):
+def assess_events(events, repo, evaluator=None):
     window = events[-80:]
     if not aggregate(window, minimum_pairs=3)["eligible"]:
         return ""
-    finding, diff = evaluator(window, cwd=str(repo))
+    finding, diff = (evaluator or evaluate_and_propose)(window, cwd=str(repo))
     return diff if finding else ""
 
 
@@ -70,9 +72,14 @@ def run_cycle():
     supervisor = EvolutionSupervisor(state, lock, cooldown=int(os.environ.get("QQ_EVOLUTION_COOLDOWN", "1800")))
     repo = development_repo()
     push_archive(repo)
+    window_hash = None
 
     def evaluate_window():
+        nonlocal window_hash
         events = fetch_remote_events(PRODUCTION_HOST, "/home/hermes/qq-audit")
+        window_hash = hashlib.sha256(json.dumps(events[-80:], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        if state.load().get("lastWindowHash") == window_hash:
+            return ""
         return assess_events(events, repo)
 
     def publish(diff):
@@ -90,7 +97,12 @@ def run_cycle():
             return "rolled_back"
         return "release_error"
 
-    return supervisor.run_once(evaluate_window, publish, int(time.time()))
+    outcome = supervisor.run_once(evaluate_window, publish, int(time.time()))
+    if window_hash and outcome in {"published", "no_change"}:
+        current = state.load()
+        current["lastWindowHash"] = window_hash
+        state.save(current)
+    return outcome
 
 
 def main():

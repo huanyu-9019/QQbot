@@ -8,9 +8,27 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 from supervisor import development_repo, assess_events, check_candidate, advance_baseline
+import supervisor as service
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_same_audit_window_is_not_reevaluated_until_new_conversation_arrives(self):
+        events = []
+        for i in range(3):
+            events.extend([{"direction": "incoming", "turnId": str(i), "timestamp": i * 1000},
+                           {"direction": "delivered", "turnId": str(i), "timestamp": i * 1000 + 100, "text": str(i)}])
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.multiple(service, STATE=Path(tmp) / "state.json", LOCK=Path(tmp) / "lock"), \
+                patch.dict(os.environ, {"QQ_EVOLUTION_COOLDOWN": "0", "QQ_EVOLUTION_GIT_REMOTE": ""}), \
+                patch.object(service, "fetch_remote_events", return_value=events), \
+                patch.object(service, "evaluate_and_propose", return_value=(None, "")) as model:
+            service.run_cycle()
+            service.run_cycle()
+            self.assertEqual(model.call_count, 1)
+            events.append({"direction": "incoming", "turnId": "new", "timestamp": 4000})
+            service.run_cycle()
+            self.assertEqual(model.call_count, 2)
+
     def test_successful_deployment_advances_only_its_files_in_development_git(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

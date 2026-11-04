@@ -7,6 +7,19 @@ from daemon import EvolutionSupervisor, StateStore, SingleJobLock
 
 
 class DaemonTests(unittest.TestCase):
+    def test_evaluation_failure_records_error_and_releases_lock_for_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.json")
+            lock = SingleJobLock(Path(tmp) / "job.lock")
+            supervisor = EvolutionSupervisor(state, lock, cooldown=0)
+            def failing_model():
+                raise RuntimeError("private response must not be stored")
+            with self.assertRaises(RuntimeError):
+                supervisor.run_once(failing_model, lambda _: True, now=1)
+            self.assertEqual(state.load()["status"], "cycle_error")
+            self.assertNotIn("private response", state.path.read_text())
+            self.assertEqual(supervisor.run_once(lambda: "", lambda _: True, now=2), "no_change")
+
     def test_repeated_failed_releases_back_off_then_resume_without_human_reset(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = StateStore(Path(tmp) / "state.json")

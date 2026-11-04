@@ -117,5 +117,10 @@ class EvolutionSupervisor:
             current.pop("retryAfter", None)
             self.state.save(current)
             return "published"
+        except Exception as error:
+            current["status"] = "cycle_error"
+            current["errorType"] = type(error).__name__
+            self.state.save(current)
+            raise
         finally:
             self.lock.release()

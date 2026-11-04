@@ -1,13 +1,21 @@
 import json
+import io
 import sys
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from agent import _failure_code, evaluate, evaluate_and_propose, parse_finding, propose_patch, validate_diff
+from agent import _failure_code, _invoke_fixed, evaluate, evaluate_and_propose, parse_finding, propose_patch, validate_diff
 
 
 class AgentTests(unittest.TestCase):
+    def test_failed_model_request_is_an_error_rather_than_a_no_change_result(self):
+        with patch("agent.subprocess.run", return_value=SimpleNamespace(returncode=1, stderr="HTTP 502")), patch("agent.sys.stderr", new_callable=io.StringIO):
+            with self.assertRaises(RuntimeError):
+                _invoke_fixed("test", ".")
+
     def test_failure_code_reports_only_safe_cli_error_categories(self):
         self.assertEqual(_failure_code(1, "Not inside a trusted directory"), "untrusted_directory")
         self.assertEqual(_failure_code(1, "HTTP 502: Upstream access forbidden"), "http_502")

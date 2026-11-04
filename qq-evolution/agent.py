@@ -68,14 +68,14 @@ def _invoke_fixed(prompt, cwd, runner=None, timeout=180, output_schema="finding.
         result = subprocess.run(args, input=prompt, text=True, capture_output=True, cwd=cwd, timeout=timeout, check=False)
         if result.returncode != 0:
             print("codex-relay failed: " + _failure_code(result.returncode, result.stderr), file=sys.stderr, flush=True)
-            return ""
+            raise RuntimeError("model_request_failed")
         return Path(output_path).read_text(encoding="utf-8")
     except subprocess.TimeoutExpired:
         print("codex-relay failed: timeout", file=sys.stderr, flush=True)
-        return ""
+        raise RuntimeError("model_request_timeout") from None
     except (OSError, UnicodeDecodeError) as error:
         print("codex-relay failed: " + type(error).__name__, file=sys.stderr, flush=True)
-        return ""
+        raise RuntimeError("model_request_unavailable") from None
     finally:
         try:
             os.unlink(output_path)
