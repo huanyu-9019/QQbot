@@ -37,6 +37,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(calls[0][0][1], "exec")
         self.assertTrue(calls[0][0][0].endswith("codex-relay"))
         self.assertIn("--output-schema", calls[0][0])
+        self.assertIn("--skip-git-repo-check", calls[0][0])
         self.assertTrue(any(arg.endswith("patch.schema.json") for arg in calls[1][0]))
         self.assertIn("untrusted", calls[0][1])
         self.assertEqual(calls[0][2], ".")

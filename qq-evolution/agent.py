@@ -44,11 +44,11 @@ def validate_diff(diff):
 def _invoke_fixed(prompt, cwd, runner=None, timeout=180, output_schema="finding.schema.json"):
     output_path = None
     if runner:
-        args = ["/home/admin/bin/codex-relay", "exec", "--sandbox", "read-only", "--ephemeral", "--output-schema", "/home/admin/qq-evolution/control/" + output_schema, "--color", "never", "-"]
+        args = ["/home/admin/bin/codex-relay", "exec", "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "--output-schema", "/home/admin/qq-evolution/control/" + output_schema, "--color", "never", "-"]
     else:
         handle, output_path = tempfile.mkstemp(prefix="qq-eval-", suffix=".txt")
         os.close(handle)
-        args = ["/home/admin/bin/codex-relay", "exec", "--sandbox", "read-only", "--ephemeral", "--output-schema", "/home/admin/qq-evolution/control/" + output_schema, "--color", "never", "--output-last-message", output_path, "-"]
+        args = ["/home/admin/bin/codex-relay", "exec", "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "--output-schema", "/home/admin/qq-evolution/control/" + output_schema, "--color", "never", "--output-last-message", output_path, "-"]
     if runner:
         return runner(args, prompt, cwd)
     try:
