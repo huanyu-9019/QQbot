@@ -17,7 +17,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false
-ReadWritePaths=/home/admin/qq-evolution-state /home/admin/qq-evolution-runtime /home/admin/qq-evolution/control /home/admin/.codex /home/admin/.cache
+ReadWritePaths=/home/admin/qq-evolution-state /home/admin/qq-evolution-runtime /home/admin/qq-evolution/control /home/admin/qq-evolution/development /home/admin/.codex /home/admin/.cache
 MemoryMax=700M
 CPUQuota=80%
 

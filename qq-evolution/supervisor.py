@@ -39,6 +39,19 @@ def check_candidate(diff, repo):
     return paths
 
 
+def advance_baseline(diff, repo):
+    paths = check_candidate(diff, repo)
+    commands = [
+        ["git", "apply", "--whitespace=nowarn", "-"],
+        ["git", "add", "--", *paths],
+        ["git", "-c", "user.name=QQ Evolution", "-c", "user.email=qq-evolution@localhost",
+         "commit", "--only", "-m", "Record deployed QQ improvement", "--", *paths],
+    ]
+    for index, command in enumerate(commands):
+        subprocess.run(command, input=diff if index == 0 else None, text=True,
+                       capture_output=True, cwd=repo, timeout=30, check=True)
+
+
 def run_cycle():
     state = StateStore(STATE)
     lock = SingleJobLock(LOCK)
@@ -58,6 +71,7 @@ def run_cycle():
         args = ["/usr/bin/ssh", "-i", "/home/admin/.ssh/qq-evolution-prod", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", PRODUCTION_HOST, "sudo /usr/bin/python3 /home/hermes/qq-evolution-release.py"]
         result = subprocess.run(args, input=diff, text=True, capture_output=True, timeout=480, check=False)
         if result.returncode == 0:
+            advance_baseline(diff, repo)
             return "published"
         if '"status": "rolled_back"' in result.stdout:
             return "rolled_back"

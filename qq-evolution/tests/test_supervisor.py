@@ -2,14 +2,30 @@ import os
 import sys
 import unittest
 import tempfile
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from supervisor import development_repo, assess_events, check_candidate
+from supervisor import development_repo, assess_events, check_candidate, advance_baseline
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_successful_deployment_advances_only_its_files_in_development_git(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            (repo / "qq-persona.md").write_text("old\n")
+            (repo / "other.txt").write_text("original\n")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@localhost", "commit", "-qm", "initial"], cwd=repo, check=True)
+            (repo / "other.txt").write_text("unrelated\n")
+            diff = "--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n"
+            advance_baseline(diff, repo)
+            self.assertEqual(subprocess.check_output(["git", "show", "HEAD:qq-persona.md"], cwd=repo, text=True), "new\n")
+            self.assertEqual(subprocess.check_output(["git", "show", "HEAD:other.txt"], cwd=repo, text=True), "original\n")
+            self.assertEqual((repo / "other.txt").read_text(), "unrelated\n")
+
     def test_successful_nonrepeated_replies_still_receive_quality_assessment(self):
         events = []
         for i in range(3):
