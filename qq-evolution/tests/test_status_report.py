@@ -1,8 +1,10 @@
 import sys
 import unittest
+from unittest.mock import patch
+import subprocess
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]))
-from status_report import report_slot, format_report
+from status_report import report_slot, format_report, remote_script
 
 class StatusReportTests(unittest.TestCase):
     def test_five_minutes_for_two_hours_then_four_hours(self):
@@ -27,3 +29,16 @@ class StatusReportTests(unittest.TestCase):
         text=format_report(sample|{'monitor':'正常','evaluation':'正常'},sample|{'bridge':True,'api':True,'model':{'reply':False,'primary':False,'deepseek':False}},0)
         self.assertIn('回复异常',text)
         self.assertIn('主链故障',text)
+
+    def test_transient_ssh_failure_retries_and_returns_real_result(self):
+        failed=subprocess.CompletedProcess([],255,'','connection failed')
+        success=subprocess.CompletedProcess([],0,'{"sent": true}','')
+        with patch('status_report.subprocess.run',side_effect=[failed,success]) as run:
+            self.assertEqual(remote_script('script'),{'sent':True})
+            self.assertEqual(run.call_count,2)
+
+    def test_failed_ssh_never_becomes_a_successful_report(self):
+        failed=subprocess.CompletedProcess([],255,'','connection failed')
+        with patch('status_report.subprocess.run',return_value=failed):
+            with self.assertRaises(RuntimeError):
+                remote_script('script')
