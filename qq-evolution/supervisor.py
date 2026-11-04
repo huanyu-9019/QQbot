@@ -19,6 +19,26 @@ def development_repo():
     return Path(os.environ.get("QQ_EVOLUTION_REPO", "/home/admin/qq-evolution/development"))
 
 
+def assess_events(events, repo, evaluator=evaluate_and_propose):
+    window = events[-80:]
+    if not aggregate(window, minimum_pairs=3)["eligible"]:
+        return ""
+    finding, diff = evaluator(window, cwd=str(repo))
+    return diff if finding else ""
+
+
+def check_candidate(diff, repo):
+    allowed_files = {path.name for path in repo.glob("qq-*.mjs")}
+    if (repo / "qq-persona.md").is_file():
+        allowed_files.add("qq-persona.md")
+    paths = changed_paths(diff, allowed_files)
+    result = subprocess.run(["git", "apply", "--check", "-"], input=diff, text=True,
+                            capture_output=True, cwd=repo, timeout=30, check=False)
+    if result.returncode:
+        raise ValueError("candidate does not apply to current source")
+    return paths
+
+
 def run_cycle():
     state = StateStore(STATE)
     lock = SingleJobLock(LOCK)
@@ -27,19 +47,11 @@ def run_cycle():
 
     def evaluate_window():
         events = fetch_remote_events(PRODUCTION_HOST, "/home/hermes/qq-audit")
-        metrics = aggregate(events, minimum_pairs=3)
-        if not metrics["eligible"] or metrics["successRate"] >= 0.8 and metrics["repeatedReplies"] == 0:
-            return ""
-        finding, diff = evaluate_and_propose(events[-80:], cwd=str(repo))
-        return diff if finding else ""
+        return assess_events(events, repo)
 
     def publish(diff):
-        allowed_files = set()
-        for path in repo.glob("qq-*.mjs"):
-            allowed_files.add(path.name)
-        allowed_files.add("qq-persona.md")
         try:
-            changed_paths(diff, allowed_files)
+            check_candidate(diff, repo)
         except ValueError:
             return False
         args = ["/usr/bin/ssh", "-i", "/home/admin/.ssh/qq-evolution-prod", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", PRODUCTION_HOST, "sudo /usr/bin/python3 /home/hermes/qq-evolution-release.py"]

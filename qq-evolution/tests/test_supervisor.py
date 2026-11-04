@@ -1,14 +1,34 @@
 import os
 import sys
 import unittest
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from supervisor import development_repo
+from supervisor import development_repo, assess_events, check_candidate
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_successful_nonrepeated_replies_still_receive_quality_assessment(self):
+        events = []
+        for i in range(3):
+            events.extend([{"direction": "incoming", "turnId": str(i), "timestamp": i * 1000, "text": "hello"},
+                           {"direction": "delivered", "turnId": str(i), "timestamp": i * 1000 + 100, "text": "different " + str(i)}])
+        def evaluator(window, cwd):
+            return {"category": "unnatural"}, "quality patch"
+        self.assertEqual(assess_events(events, Path("/repo"), evaluator), "quality patch")
+
+    def test_stale_patch_is_rejected_before_remote_publish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "qq-persona.md").write_text("current\n", encoding="utf-8")
+            good = "--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-current\n+improved\n"
+            self.assertEqual(check_candidate(good, repo), ["qq-persona.md"])
+            with self.assertRaises(ValueError):
+                check_candidate(good.replace("-current", "-obsolete"), repo)
+            self.assertEqual((repo / "qq-persona.md").read_text(), "current\n")
+
     def test_uses_current_development_tree_and_allows_explicit_path_override(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("QQ_EVOLUTION_REPO", None)
