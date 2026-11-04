@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -38,3 +39,51 @@ def create_snapshot(source, snapshots, files):
     manifest = {"version": 1, "id": snapshot_id, "files": entries}
     (target / "manifest.json").write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
     return manifest
+
+
+class ReleaseManager:
+    def __init__(self, source, snapshots, files, restart, health, apply_diff=None):
+        self.source = Path(source)
+        self.snapshots = Path(snapshots)
+        self.files = list(files)
+        self.restart = restart
+        self.health = health
+        self.apply_diff = apply_diff or self._apply_unified_diff
+
+    def apply(self, diff):
+        if not validate_patch(diff):
+            raise ValueError("patch rejected")
+        manifest = create_snapshot(self.source, self.snapshots, self.files)
+        try:
+            self.apply_diff(self.source, diff)
+            self.restart()
+            if not self.health():
+                raise RuntimeError("health check failed")
+            return manifest
+        except Exception:
+            self.restore(manifest)
+            self.restart()
+            raise
+
+    def restore(self, manifest):
+        snapshot = self.snapshots / manifest["id"]
+        for entry in manifest["files"]:
+            path = Path(entry["path"])
+            source_file = snapshot / path
+            destination = self.source / path
+            if hashlib.sha256(source_file.read_bytes()).hexdigest() != entry["sha256"]:
+                raise RuntimeError("snapshot hash mismatch")
+            shutil.copy2(source_file, destination)
+
+    @staticmethod
+    def _apply_unified_diff(source, diff):
+        result = subprocess.run(
+            ["/usr/bin/patch", "--batch", "--forward", "--fuzz=0", "-p1", "-d", str(source)],
+            input=diff,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError("fixed patch application failed")

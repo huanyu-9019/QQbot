@@ -1,0 +1,24 @@
+[Unit]
+Description=QQ autonomous evolution supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+WorkingDirectory=/home/hermes/qq-evolution
+Environment=QQ_EVOLUTION_STATE=/home/hermes/qq-evolution-state/state.json
+Environment=QQ_EVOLUTION_LOCK=/home/hermes/qq-evolution-state/job.lock
+ExecStart=/usr/bin/python3 /home/hermes/qq-evolution/supervisor.py
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/home/hermes/qq-evolution-state /home/hermes/qq-evolution-runtime
+MemoryMax=700M
+CPUQuota=80%
+
+[Install]
+WantedBy=multi-user.target

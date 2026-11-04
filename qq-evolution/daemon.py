@@ -44,3 +44,44 @@ class SingleJobLock:
                 self.path.unlink()
             except FileNotFoundError:
                 pass
+
+
+class EvolutionSupervisor:
+    def __init__(self, state, lock, cooldown=900, max_rollback_failures=2):
+        self.state = state
+        self.lock = lock
+        self.cooldown = cooldown
+        self.max_rollback_failures = max_rollback_failures
+
+    def record_rollback_failure(self):
+        current = self.state.load()
+        current["rollbackFailures"] = int(current.get("rollbackFailures", 0)) + 1
+        self.state.save(current)
+
+    def run_once(self, evaluate, publish, now):
+        current = self.state.load()
+        if int(current.get("rollbackFailures", 0)) >= self.max_rollback_failures:
+            return "locked_out"
+        if now - int(current.get("lastRun", -10**18)) < self.cooldown:
+            return "cooldown"
+        if not self.lock.acquire():
+            return "busy"
+        try:
+            current["lastRun"] = now
+            current["status"] = "evaluating"
+            self.state.save(current)
+            artifact = evaluate()
+            if not artifact:
+                current["status"] = "no_change"
+                self.state.save(current)
+                return "no_change"
+            if not publish(artifact):
+                current["status"] = "rejected"
+                self.state.save(current)
+                return "rejected"
+            current["status"] = "published"
+            current["rollbackFailures"] = 0
+            self.state.save(current)
+            return "published"
+        finally:
+            self.lock.release()
