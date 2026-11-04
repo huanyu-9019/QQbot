@@ -66,8 +66,9 @@ def execute(decision):
         subprocess.run(args,input=diff,text=True,capture_output=True,timeout=480,check=True)
         advance_baseline(diff,REPO)
         return
-    script="import subprocess,json\nr=subprocess.run(['/usr/bin/python3','/home/hermes/qq-incident-repair.py',"+repr(decision['action'])+"],capture_output=True,text=True,timeout=100)\nprint(json.dumps({'ok':r.returncode==0}))"
-    if not remote_script(script,timeout=120).get('ok'):
+    repair_source=Path(__file__).with_name('incident_repair.py').read_text(encoding='utf-8')
+    script=repair_source+"\nrepair("+repr(decision['action'])+")\n"
+    if not remote_script(script,timeout=120).get('executed'):
         raise RuntimeError('fixed recovery failed')
 
 def main():
