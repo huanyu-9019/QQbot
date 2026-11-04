@@ -22,6 +22,7 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(len(safe["text"]), 1200)
         self.assertIsNone(sanitize_record({"direction": "incoming", "text": "bad"}))
         self.assertIsNone(sanitize_record("not an object"))
+        self.assertIsNone(sanitize_record({"timestamp": "bad", "direction": "incoming", "kind": "private", "sessionHash": "a" * 64, "text": "x"}))
 
     def test_cursor_resumes_without_replaying_or_accepting_malformed_rows(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -29,7 +29,10 @@ def sanitize_record(record):
     if not isinstance(record["sessionHash"], str) or not re.fullmatch(r"[a-f0-9]{64}", record["sessionHash"]):
         return None
     row = {key: record[key] for key in required}
-    row["timestamp"] = int(record["timestamp"])
+    try:
+        row["timestamp"] = int(record["timestamp"])
+    except (TypeError, ValueError, OverflowError):
+        return None
     row["text"] = redact_text(record["text"])
     if "turnId" in record and isinstance(record["turnId"], str):
         row["turnId"] = record["turnId"]
