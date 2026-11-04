@@ -56,7 +56,7 @@ def run_cycle():
         except ValueError:
             return False
         args = ["/usr/bin/ssh", "-i", "/home/admin/.ssh/qq-evolution-prod", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", PRODUCTION_HOST, "sudo /usr/bin/python3 /home/hermes/qq-evolution-release.py"]
-        result = subprocess.run(args, input=diff, text=True, capture_output=True, timeout=180, check=False)
+        result = subprocess.run(args, input=diff, text=True, capture_output=True, timeout=480, check=False)
         if result.returncode == 0:
             return "published"
         if '"status": "rolled_back"' in result.stdout:

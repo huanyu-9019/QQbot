@@ -74,6 +74,14 @@ def health():
     return bridge.stdout.strip() == "active" and api.stdout.strip() == "active"
 
 
+def apply_source_patch(source, diff, git="/usr/bin/git"):
+    for options in (["--check"], ["--whitespace=nowarn"]):
+        result = subprocess.run([git, "-C", str(source), "apply", *options, "-"],
+                                input=diff, text=True, capture_output=True, timeout=30, check=False)
+        if result.returncode:
+            raise RuntimeError("patch rejected")
+
+
 def apply(diff):
     paths = changed_paths(diff, FILES)
     for name in paths:
@@ -84,9 +92,7 @@ def apply(diff):
             raise ValueError("binary patch target rejected")
     ident = snapshot()
     try:
-        result = subprocess.run(["/usr/bin/patch", "--batch", "--forward", "--fuzz=0", "-p1", "-d", str(SOURCE)], input=diff, text=True, capture_output=True, timeout=30, check=False)
-        if result.returncode != 0:
-            raise RuntimeError("patch rejected")
+        apply_source_patch(SOURCE, diff)
         node = "/home/hermes/.hermes/tools/node-26.12.1-linux-x64/bin/node"
         tests = sorted(str(path) for path in SOURCE.glob("qq-*.test.mjs"))
         suite = run([node, "--test", *tests], timeout=240)
