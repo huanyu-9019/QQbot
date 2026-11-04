@@ -11,6 +11,11 @@ from agent import _failure_code, _invoke_fixed, evaluate, evaluate_and_propose, 
 
 
 class AgentTests(unittest.TestCase):
+    def test_malformed_model_output_cannot_mark_a_window_as_successfully_assessed(self):
+        for response in ("", "not json", "[]", "{}", '{"finding": null, "diff": "unexpected"}'):
+            with self.subTest(response=response), self.assertRaises(ValueError):
+                evaluate_and_propose([], runner=lambda *args: response)
+
     def test_failed_model_request_is_an_error_rather_than_a_no_change_result(self):
         with patch("agent.subprocess.run", return_value=SimpleNamespace(returncode=1, stderr="HTTP 502")), patch("agent.sys.stderr", new_callable=io.StringIO):
             with self.assertRaises(RuntimeError):

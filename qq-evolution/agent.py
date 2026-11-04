@@ -112,9 +112,13 @@ def evaluate_and_propose(events, cwd=".", runner=None):
     try:
         result = json.loads(output)
     except (TypeError, json.JSONDecodeError):
+        raise ValueError("invalid model response") from None
+    if not isinstance(result, dict) or set(result) != {"finding", "diff"}:
+        raise ValueError("invalid model response")
+    if result["finding"] is None and result["diff"] == "":
         return None, ""
     finding = parse_finding(json.dumps(result.get("finding")))
     diff = result.get("diff", "")
     if not finding or not validate_diff(diff):
-        return finding, ""
+        raise ValueError("invalid model candidate")
     return finding, diff
