@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 
 from admin_status import build_snapshot
+from runtime_support import runtime_ready, probe_runtime
+import inspect
 from collector import redact_text
 
 
@@ -35,8 +37,12 @@ try:
  line=open('/home/hermes/qq-evolution-release.jsonl').read().splitlines()[-1]
  data['latestChange']=json.loads(line)
 except Exception:data['latestChange']={}
+runtime=probe_runtime()
+if runtime.get('runtime')=='astrbot':
+ data.update(runtime=runtime['runtime'],bridge=runtime['bridge'],api=runtime['api'],napcat=runtime['napcat'],astrbot=runtime['astrbot'],qqConnected=runtime['qqConnected'],companionReady=runtime['companionReady'],lastSent=runtime['lastSent'],lastIncoming=runtime['lastIncoming'],unanswered=runtime['unanswered'])
 print(json.dumps(data,separators=(',',':')))
 '''
+PROBE = inspect.getsource(runtime_ready) + '\n' + inspect.getsource(probe_runtime) + '\n' + PROBE
 
 
 WRITE = r'''import grp,json,os,sys,tempfile

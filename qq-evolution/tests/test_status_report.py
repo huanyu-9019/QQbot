@@ -4,23 +4,9 @@ from unittest.mock import patch
 import subprocess
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]))
-from status_report import report_slot, format_report, remote_script, production_probe_script, publish_event
+from status_report import report_slot, format_report, remote_script, publish_event, production_probe_script
 
 class StatusReportTests(unittest.TestCase):
-    def test_iteration_update_requires_valid_space_event_and_reports_confirmation(self):
-        with patch('status_report.remote_script', return_value={'sent': True}) as remote:
-            self.assertTrue(publish_event('qq-learn-2', '江生学习#2：减少重复表达。本轮没有代码改动，未重跑测试；沿用最近验证版本。'))
-            self.assertIn('qq-learn-2', remote.call_args.args[0])
-        with self.assertRaises(ValueError):
-            publish_event('../bad', 'invalid')
-
-    def test_generated_production_probe_is_valid_python_and_checks_pending_turns(self):
-        script = production_probe_script()
-        compile(script, "production-probe", "exec")
-        self.assertIn("direction=='failed'", script)
-        self.assertIn("unanswered", script)
-        self.assertIn("urllib.request", script.splitlines()[0])
-
     def test_five_minutes_for_two_hours_then_four_hours(self):
         start=1000000000
         self.assertEqual(report_slot(start,start+299),'fast-0')
@@ -57,6 +43,22 @@ class StatusReportTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 remote_script('script')
 
+
+class PreservedBaselineTests(unittest.TestCase):
+    def test_iteration_update_requires_valid_space_event_and_reports_confirmation(self):
+        with patch('status_report.remote_script', return_value={'sent': True}) as remote:
+            self.assertTrue(publish_event('qq-learn-2', '江生学习#2：减少重复表达。本轮没有代码改动，未重跑测试；沿用最近验证版本。'))
+            self.assertIn('qq-learn-2', remote.call_args.args[0])
+        with self.assertRaises(ValueError):
+            publish_event('../bad', 'invalid')
+
+    def test_generated_production_probe_is_valid_python_and_checks_pending_turns(self):
+        script = production_probe_script()
+        compile(script, "production-probe", "exec")
+        self.assertIn("direction=='failed'", script)
+        self.assertIn("unanswered", script)
+        self.assertIn("import urllib.request", script)
+
     def test_half_hour_iterations_include_reasoned_no_change_events(self):
         from scheduler import iteration_due,record_iteration
         self.assertFalse(iteration_due({'lastIteration':100},100+899))
@@ -64,3 +66,5 @@ class StatusReportTests(unittest.TestCase):
         state={};record_iteration(state,now=1900,updated=False,reason='No measurable improvement passed the quality gate')
         self.assertEqual(state['iterationCount'],1)
         self.assertEqual(state['updateKind'],'learning_record')
+
+

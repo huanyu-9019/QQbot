@@ -46,7 +46,8 @@ def append_learning_record(path, state):
         record['revision'] = str(state['lastRevision'])[:80]
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
-        os.fchmod(descriptor, 0o600)
+        if hasattr(os, 'fchmod'):
+            os.fchmod(descriptor, 0o600)
         os.write(descriptor, (json.dumps(record, ensure_ascii=False) + '\n').encode('utf-8'))
         os.fsync(descriptor)
     finally:

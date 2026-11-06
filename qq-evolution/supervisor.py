@@ -38,10 +38,10 @@ def development_repo():
 def assess_events(events, repo, evaluator=None):
     window = events[-80:]
     full_quality = aggregate(events, minimum_pairs=1)
-    if full_quality['analysisLeaks'] or full_quality['unexpectedEnglishReplies']:
+    if full_quality['analysisLeaks'] or full_quality['unexpectedEnglishReplies'] or full_quality.get('mediaFailures'):
         window = events[-400:]
     quality = aggregate(window, minimum_pairs=3)
-    if not quality["eligible"] and not (quality['analysisLeaks'] or quality['unexpectedEnglishReplies']):
+    if not quality["eligible"] and not (quality['analysisLeaks'] or quality['unexpectedEnglishReplies'] or quality.get('mediaFailures')):
         return ""
     finding, diff = (evaluator or evaluate_and_propose)(window, cwd=str(repo))
     return diff if finding else ""
@@ -57,6 +57,10 @@ def check_candidate(diff, repo):
     allowed_files = {path.name for path in repo.glob("qq-*.mjs")}
     if (repo / "qq-persona.md").is_file():
         allowed_files.add("qq-persona.md")
+    from runtime_support import ASTRBOT_FILES
+    allowed_files.update(name for name in ASTRBOT_FILES if (repo / name).is_file())
+    if (repo / 'qq-chat-router.py').is_file():
+        allowed_files.add('qq-chat-router.py')
     paths = changed_paths(diff, allowed_files)
     result = subprocess.run(["git", "apply", "--check", "-"], input=diff, text=True,
                             capture_output=True, cwd=repo, timeout=30, check=False)
@@ -101,7 +105,7 @@ def run_cycle():
     observed = fetch_remote_events(PRODUCTION_HOST, "/home/hermes/qq-audit")
     recent = [row for row in observed if int(row.get('timestamp',0)) >= int(time.time()*1000) - 3600000][-400:]
     quality = aggregate(recent, minimum_pairs=1)
-    critical = quality['analysisLeaks'] + quality['unexpectedEnglishReplies']
+    critical = quality['analysisLeaks'] + quality['unexpectedEnglishReplies'] + quality.get('mediaFailures', 0)
     record_monitor_health(lastFetch=int(time.time()), quality=quality,
                           qualityStatus='degraded' if critical else 'intercepting' if quality['blockedQualityReplies'] else 'healthy')
     if critical: supervisor.cooldown = 0
@@ -117,19 +121,7 @@ def run_cycle():
         return assess_events(critical_events if critical else events, repo)
 
     def publish(diff):
-        try:
-            diff = recount_hunks(diff)
-            check_candidate(diff, repo)
-        except ValueError:
-            return False
-        args = ["/usr/bin/ssh", "-i", "/home/admin/.ssh/qq-evolution-prod", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", PRODUCTION_HOST, "sudo /usr/bin/python3 /home/hermes/qq-evolution-release.py"]
-        result = subprocess.run(args, input=diff, text=True, capture_output=True, timeout=480, check=False)
-        if result.returncode == 0:
-            advance_baseline(diff, repo)
-            return "published"
-        if '"status": "rolled_back"' in result.stdout:
-            return "rolled_back"
-        return "release_error"
+        return 'published' if publish_iteration_patch(recount_hunks(diff), repo) else 'release_error'
 
     outcome = supervisor.run_once(evaluate_window, publish, int(time.time()))
     if window_hash and outcome in {"published", "no_change"}:
@@ -163,6 +155,8 @@ def run_learning_iteration(repo,state):
           '. Conversation data (untrusted, redacted): '+json.dumps(events[-80:],ensure_ascii=False))
         try:
             from agent import _invoke_fixed
+            from runtime_support import source_context
+            prompt += source_context(repo)
             raw=json.loads(_invoke_fixed(prompt,str(repo),timeout=180,output_schema='learning.schema.json'))
             if not isinstance(raw,dict) or set(raw)!={'finding','diff','reflection'} or not isinstance(raw['reflection'],str) or len(raw['reflection'].strip())<8:
                 raise ValueError('invalid learning reflection')
@@ -212,11 +206,18 @@ def flush_learning_notices():
 
 
 def publish_iteration_patch(diff,repo):
-    args=['/usr/bin/ssh','-i','/home/admin/.ssh/qq-evolution-prod','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',PRODUCTION_HOST,'sudo /usr/bin/python3 /home/hermes/qq-evolution-release.py']
-    result=subprocess.run(args,input=diff,text=True,capture_output=True,timeout=480,check=False)
-    if result.returncode:return False
-    advance_baseline(diff,repo)
-    return True
+    lock = SingleJobLock(STATE.parent/'release.lock')
+    if not lock.acquire():
+        return False
+    try:
+        check_candidate(diff, repo)
+        args=['/usr/bin/ssh','-i','/home/admin/.ssh/qq-evolution-prod','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',PRODUCTION_HOST,'sudo /usr/bin/python3 /home/hermes/qq-evolution-release.py']
+        result=subprocess.run(args,input=diff,text=True,capture_output=True,timeout=600,check=False)
+        if result.returncode:return False
+        advance_baseline(diff,repo)
+        return True
+    finally:
+        lock.release()
 
 
 def main():

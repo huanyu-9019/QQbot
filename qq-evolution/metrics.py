@@ -54,13 +54,17 @@ def aggregate(events, minimum_pairs=3):
     repeated = sum(1 for index in range(1, len(replies)) if replies[index] and replies[index] == replies[index - 1])
     for turn_id, delivered in delivered_by_turn.items():
         incoming = next((row for row in events if row.get("turnId") == turn_id and row.get("direction") == "incoming"), {})
-        if len(delivered) > 1:
+        voice_audited = any(row.get('turnId') == turn_id and row.get('direction') == 'voice_source' for row in events)
+        paired_voice = (voice_audited and len(delivered) == 2
+                        and {row.get('media') for row in delivered} == {'text', 'voice'}
+                        and delivered[0].get('text') == delivered[1].get('text'))
+        if len(delivered) > 1 and not paired_voice:
             multi_message_turns += 1
         if incoming.get("mentionedOther") is True and delivered:
             foreign_mention_replies += 1
         if any(re.search(r"<img\b|<a\b|<script\b", str(row.get("text", "")), re.I) for row in delivered):
             html_leaks += 1
-        if incoming.get("media") not in {"voice", "audio"} and any(row.get("media") == "voice" for row in delivered):
+        if not voice_audited and incoming.get("media") not in {"voice", "audio"} and any(row.get("media") == "voice" for row in delivered):
             unsolicited_voice += 1
     incoming_by_turn = {row.get('turnId'): row.get('text', '') for row in events if row.get('direction') == 'incoming'}
     issues = [reply_quality_issue(row.get('text'), incoming_by_turn.get(row.get('turnId'), ''))
@@ -72,6 +76,7 @@ def aggregate(events, minimum_pairs=3):
         "analysisLeaks": issues.count('analysis_leak'),
         "unexpectedEnglishReplies": issues.count('unexpected_english'),
         "blockedQualityReplies": blocked,
+        "mediaFailures": sum(row.get('direction') == 'quality' and row.get('outcome') in {'stt_failed', 'tts_failed', 'vision_failed'} for row in events),
         "pairs": len(pairs),
         "silences": silences,
         "unobservableTurns": unobservable,

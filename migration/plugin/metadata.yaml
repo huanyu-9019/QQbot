@@ -1,0 +1,5 @@
+name: jiangsheng_migration
+display_name: 江生迁移兼容
+author: huanyu
+version: 1.0.0
+desc: 群聊归因、旧资料边界、回复质量和真实投递审计

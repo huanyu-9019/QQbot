@@ -86,8 +86,10 @@ def production_probe_script():
       " data['model']['unanswered']=gaps\n data['model']['reply']=bool(data['model'].get('reply')) and gaps==0\n"
       "except Exception: data['model']['reply']=False; data['model']['unanswered']=-1\n")
     script=script.replace('print(json.dumps(data))',audit_script+'print(json.dumps(data))')
-    return script.replace('import json,shutil,subprocess,urllib.request',
-                          'import json,shutil,subprocess,time,urllib.request')
+    from runtime_support import runtime_ready, probe_runtime
+    script = script.replace('print(json.dumps(data))',
+        "runtime=probe_runtime()\nif runtime.get('runtime')=='astrbot':\n data.update(bridge=runtime['bridge'],api=runtime['api'],runtime='astrbot',qqConnected=runtime['qqConnected'])\n data['model'].update(reply=runtime['reply'],unanswered=runtime['unanswered'])\nprint(json.dumps(data))")
+    return inspect.getsource(runtime_ready) + '\n' + inspect.getsource(probe_runtime) + '\n' + script
 
 
 def publish_event(event_id, text):

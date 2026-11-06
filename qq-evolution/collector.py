@@ -12,6 +12,7 @@ _ADDRESS = re.compile(r"(?:[\u4e00-\u9fff]{2,12}(?:省|市|区|县|路|街|号)[
 
 def redact_text(text):
     value = str(text or "")
+    value = re.sub(r'\bsk-[A-Za-z0-9_-]{12,}', '[REDACTED_SECRET]', value)
     value = _SECRET.sub("[REDACTED_SECRET]", value)
     value = _PHONE.sub("[REDACTED_PHONE]", value)
     value = _QQ.sub("[REDACTED_ID]", value)
@@ -25,7 +26,7 @@ def sanitize_record(record):
     required = ("timestamp", "direction", "kind", "sessionHash", "text")
     if any(key not in record for key in required):
         return None
-    if record["direction"] not in ("incoming", "delivered", "silent", "failed", "quality") or record["kind"] not in ("private", "group"):
+    if record["direction"] not in ("incoming", "delivered", "silent", "failed", "quality", "voice_source") or record["kind"] not in ("private", "group"):
         return None
     if not isinstance(record["sessionHash"], str) or not re.fullmatch(r"[a-f0-9]{64}", record["sessionHash"]):
         return None
@@ -47,6 +48,16 @@ def sanitize_record(record):
         return None
     if "turnId" in record and isinstance(record["turnId"], str):
         row["turnId"] = record["turnId"]
+    if isinstance(record.get('speakerHash'), str) and re.fullmatch(r'[a-f0-9]{64}', record['speakerHash']):
+        row['speakerHash'] = record['speakerHash']
+    if record.get('media') in {'text', 'voice', 'image'}:
+        row['media'] = record['media']
+    if record.get('runtime') in {'hermes', 'astrbot'}:
+        row['runtime'] = record['runtime']
+    if isinstance(record.get('hasTranscript'), bool):
+        row['hasTranscript'] = record['hasTranscript']
+    if isinstance(record.get('replyTo'), list):
+        row['replyTo'] = [value for value in record['replyTo'][:4] if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9:_-]{1,100}', value)]
     if record["direction"] in {"silent", "failed"} and record.get("outcome") in {
         "group_cooldown", "collection_only", "model_silent", "sticker_unavailable",
         "media_unavailable", "private_throttle", "text_too_long", "queue_rejected",
@@ -54,7 +65,7 @@ def sanitize_record(record):
     }:
         row["outcome"] = record["outcome"]
     if record['direction'] == 'quality':
-        if record.get('outcome') not in {'analysis_leak', 'unexpected_english'}: return None
+        if record.get('outcome') not in {'analysis_leak', 'unexpected_english', 'stt_failed', 'tts_failed', 'vision_failed'}: return None
         row['outcome'] = record['outcome']
         row['text'] = ''
     return row
