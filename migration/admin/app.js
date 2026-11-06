@@ -107,7 +107,8 @@ function renderEvolution(data) {
     const item=document.createElement('article');item.className='history-entry';
     const title=document.createElement('strong');title.textContent=formatTime(row.at)+' · '+row.revision;
     const files=document.createElement('p');files.textContent=(row.files || []).map(f => f.file+'（新增 '+f.added+' / 删除 '+f.removed+' 行）').join('、');
-    item.append(title,files);
+    item.append(title);
+    if ((row.files || []).length > 4) { const detail=document.createElement('details'); const summary=document.createElement('summary'); summary.textContent='展开 '+row.files.length+' 个文件的改动'; detail.append(summary,files); item.append(detail); } else { item.append(files); }
     for(const rule of row.summary || []) { const p=document.createElement('p');p.className='small muted';p.textContent=rule;item.append(p); }
     commits.append(item);
   }
