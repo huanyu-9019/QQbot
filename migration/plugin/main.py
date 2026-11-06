@@ -230,13 +230,13 @@ class JiangshengMigration(Star):
     @filter.on_llm_response(priority=-2000000)
     async def generated(self, event, response):
         text = getattr(response, 'completion_text', '') or ''
-        event.set_extra('jiangsheng_generated', text)
         if event.get_extra('jiangsheng_media') == 'image' and re.search(r'看不到图片|无法查看图片|无法访问.{0,12}图片|图片没有.{0,6}(?:传|送|收)', text):
             self.write('quality', event, outcome='vision_failed', media='image')
         issue = quality_issue(text, event.message_str)
         if issue:
             self.write('quality', event, outcome=issue)
             response.completion_text = '刚才那句没说好，你接着说。'
+        event.set_extra('jiangsheng_generated', response.completion_text or '')
 
     async def terminate(self):
         for task in [*self.tasks, *self.pending_tasks]:
