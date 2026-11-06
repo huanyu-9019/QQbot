@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { createRelationshipStore } from './qq-relationship.mjs';
+import { createRelationshipStore, migrateJsonDirectory, sanitizeProfileData } from './qq-relationship.mjs';
 
 export const persona = readFileSync('/home/hermes/qq-persona.md', 'utf8');
 const directory = join(process.env.HOME, 'qq-memory');
@@ -9,6 +9,8 @@ const userDirectory = join(process.env.HOME, 'qq-user-memory');
 const relationships = createRelationshipStore(join(process.env.HOME, 'qq-relationship'));
 mkdirSync(directory, { recursive: true, mode: 0o700 });
 mkdirSync(userDirectory, { recursive: true, mode: 0o700 });
+migrateJsonDirectory(directory, sanitizeProfileData);
+migrateJsonDirectory(userDirectory, sanitizeProfileData);
 
 function scopeId(task) {
   const scope = task.kind === 'group'
@@ -30,6 +32,7 @@ function emptyProfile() {
 }
 
 function withProfile(data) {
+  data = sanitizeProfileData(data);
   const current = data.profile && typeof data.profile === 'object' ? data.profile : {};
   data.profile = {
     preferredName: typeof current.preferredName === 'string' ? current.preferredName : '',
@@ -102,7 +105,7 @@ function load(task, personal = false) {
 function save(task, data, personal = false) {
   const file = fileFor(task, personal);
   const temporary = `${file}.${process.pid}.tmp`;
-  writeFileSync(temporary, JSON.stringify(data), { mode: 0o600 });
+  writeFileSync(temporary, JSON.stringify(sanitizeProfileData(data)), { mode: 0o600 });
   renameSync(temporary, file);
 }
 

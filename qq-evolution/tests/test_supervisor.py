@@ -12,6 +12,14 @@ import supervisor as service
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_learning_fetch_refreshes_monitor_freshness(self):
+        from unittest.mock import patch
+        with patch.object(service, "fetch_remote_events", return_value=[{"text": "safe"}]), \
+             patch.object(service, "record_monitor_health") as heartbeat:
+            rows = service.fetch_learning_events()
+        self.assertEqual(rows, [{"text": "safe"}])
+        self.assertEqual(heartbeat.call_args.kwargs.keys(), {"lastFetch"})
+
     def test_same_audit_window_is_not_reevaluated_until_new_conversation_arrives(self):
         events = []
         for i in range(3):

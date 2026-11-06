@@ -57,3 +57,33 @@ test('prunes audit files older than seven days', () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test('blocks analysis and unexpected English but preserves requested English and normal names', async () => {
+  const {replyQualityIssue, guardReplyQuality} = await import('./qq-conversation-audit.mjs');
+  for (const text of ['The interaction involves a direct question posed to another participant.', 'Initial assessment: The user expresses aimlessness.', 'The "江生" messages exhibit debugging artifacts.', '<think>internal</think>']) {
+    assert.equal(replyQualityIssue(text, '你好'), 'analysis_leak');
+  }
+  const english = 'This is a long English paragraph describing a lovely day in the park and the beautiful trees near the river. '.repeat(2);
+  assert.equal(replyQualityIssue(english, '你好'), 'unexpected_english');
+  assert.equal(replyQualityIssue(english, '用英文介绍一下公园'), null);
+  for (const text of ['OK，HTTP 503，MyGO', '<QQ_SILENT>', '普通中文聊天']) assert.equal(replyQualityIssue(text), null);
+  const issues=[]; const retries=[];
+  assert.equal(await guardReplyQuality(async retry => {retries.push(retry); return retry ? '嗯，在呢。' : 'Initial assessment: The user expresses aimlessness.';}, {onIssue:x=>issues.push(x)}), '嗯，在呢。');
+  assert.deepEqual(retries, [false,true]); assert.deepEqual(issues, ['analysis_leak']);
+  assert.equal(await guardReplyQuality(async ()=>'Initial assessment: bad', {fallback:'安全回复'}), '安全回复');
+  assert.equal(await guardReplyQuality(async retry=>{if(retry)throw Error('timeout');return 'Initial assessment: bad';}, {fallback:'安全回复'}), '安全回复');
+  await assert.rejects(guardReplyQuality(async ()=>{throw Error('offline');}), /offline/);
+});
+
+test('quality interception is audited without copying internal analysis text or finishing a turn', () => {
+  const directory=mkdtempSync(join(tmpdir(), 'qq-quality-'));
+  try {
+    const audit=createConversationAudit({directory,sessionSalt:'test',now:()=>1700000000000});
+    audit.recordQuality({sessionKey:'qq:group:123',kind:'group',turnId:'x',outcome:'analysis_leak',text:'secret analysis'});
+    const row=JSON.parse(readFileSync(join(directory,readdirSync(directory)[0]),'utf8').trim());
+    assert.equal(row.direction,'quality'); assert.equal(row.outcome,'analysis_leak'); assert.equal(row.text,'');
+    assert.equal(row.sessionKey,undefined);
+    assert.throws(()=>audit.recordQuality({outcome:'other'}));
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});

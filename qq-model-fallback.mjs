@@ -6,16 +6,26 @@ export function validCompletion(result) {
 export async function withLastFallback(primary,backup) {
  try {return await primary();} catch {return await backup();}
 }
-export async function deepSeekReply(messages,{signal}={}) {
- const env=readFileSync('/home/hermes/.hermes/.env','utf8');
- const key=env.split(/\r?\n/).filter(x=>x.startsWith('DEEPSEEK_API_KEY=')).at(-1)?.slice('DEEPSEEK_API_KEY='.length).trim();
- if(!key)throw Error('DeepSeek key missing');
- const safeMessages=messages.map(m=>({...m,content:Array.isArray(m.content)?m.content.filter(x=>x.type==='text').map(x=>x.text).join('\n'):m.content}));
- const r=await fetch('https://api.deepseek.com/chat/completions',{
- method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
- body:JSON.stringify({model:'deepseek-flash',messages:safeMessages,stream:false,max_tokens:512,thinking:{type:'disabled'}}),
- signal:signal?AbortSignal.any([signal,AbortSignal.timeout(30000)]):AbortSignal.timeout(30000)});
- if(!r.ok)throw Error('DeepSeek HTTP '+r.status);
- const j=await r.json();if(!validCompletion(j))throw Error('DeepSeek incomplete reply');
- return j.choices[0].message.content.trim();
+function containsImage(messages) {
+ return messages.some(message=>Array.isArray(message.content)&&message.content.some(part=>part?.type==='image_url'||part?.type==='input_image'));
+}
+export async function routedVisionReply(messages,{signal,routerConfig,fetchImpl=fetch}={}) {
+ const config=routerConfig??JSON.parse(readFileSync('/home/hermes/.hermes/chat-routing.json','utf8'));
+ if(typeof config.localKey!=='string'||!config.localKey)throw Error('vision router unavailable');
+ const base=typeof config.base==='string'?config.base:'http://127.0.0.1:8650/v1';
+ const response=await fetchImpl((base.endsWith('/')?base.slice(0,-1):base)+'/chat/completions',{
+  method:'POST',headers:{Authorization:'Bearer '+config.localKey,'Content-Type':'application/json'},
+  body:JSON.stringify({model:'qq-chat',messages,stream:false}),
+  signal:signal?AbortSignal.any([signal,AbortSignal.timeout(30000)]):AbortSignal.timeout(30000),
+ });
+ if(!response.ok)throw Error('vision router HTTP '+response.status);
+ const result=await response.json();if(!validCompletion(result))throw Error('vision router incomplete reply');
+ const answer=result.choices[0].message.content.trim();
+ const lowerAnswer=answer.toLowerCase();
+ if(containsImage(messages)&&['看不到','看不见','无法查看','不能查看',"can't see","can't view",'cannot see','cannot view',"don't have access to the image"].some(term=>lowerAnswer.includes(term)))throw Error('vision route returned an image access failure');
+ return answer;
+}
+export async function deepSeekReply(messages,{signal,routerConfig,fetchImpl=fetch}={}) {
+ // Text and images share the configured provider order and cached health state.
+ return routedVisionReply(messages,{signal,routerConfig,fetchImpl});
 }

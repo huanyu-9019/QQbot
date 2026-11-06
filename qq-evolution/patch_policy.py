@@ -1,7 +1,45 @@
 import re
 
-ALLOWED = re.compile(r"^(?:qq-[A-Za-z0-9._-]+\.mjs|qq-persona\.md|qq-[A-Za-z0-9._-]+\.test\.mjs)$")
+ALLOWED = re.compile(r"^(?:qq-[A-Za-z0-9._-]+\.mjs|qq-persona\.md|qq-[A-Za-z0-9._-]+\.test\.mjs|qq-chat-router\.py)$")
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$")
+_UNEQUAL = re.compile(r"主人|奴隶|主仆|奴役|支配|服从|所有物|所有者|占有|低人一等|高人一等|不平等|剥夺人权|没有人权|无条件听命|强迫服从|人身控制|人身自由受限|剥夺自由|剥夺权利|霸凌|虐待|压迫|剥削|性别歧视|种族歧视|阶级歧视|human rights violation|slave owner|master and slave|enslavement", re.I)
+_NEGATION = re.compile(r"没有|不受|不因|不把|拒绝|反对|不允许|禁止|不要|不应|不该|不得|避免|反抗|摆脱|no\s+|not\s+|never\s+|without\s+|against\s+", re.I)
+
+
+def validate_persona_policy_patch(patch):
+    protected_files = {
+        "qq-persona.md": ("人格与身份边界稳定",),
+        "qq-persona-messages.mjs": ("最终身份边界：", "@其他成员不代表在叫你"),
+        "qq-memory.mjs": ("migrateJsonDirectory(directory, sanitizeProfileData)", "sanitizeProfileData(data)", "sanitizeProfileData(data)),"),
+        "qq-relationship.mjs": ("migrateJsonDirectory(directory, sanitizeRelationshipState)", "sanitizeRelationshipState(state)"),
+    }
+    path = None
+    in_hunk = False
+    for line in patch.splitlines():
+        if line.startswith("+++ b/"):
+            path = line[6:]
+            in_hunk = False
+            continue
+        if line.startswith("@@ "):
+            in_hunk = True
+            continue
+        if line.startswith("--- a/") or line.startswith("diff --git "):
+            in_hunk = False
+            continue
+        if path not in protected_files or not in_hunk:
+            continue
+        if line.startswith("-"):
+            if any(marker in line for marker in protected_files[path]):
+                raise ValueError("autonomy and profile safety guard cannot be removed")
+            continue
+        if path != "qq-persona.md":
+            continue
+        if not line.startswith("+"):
+            continue
+        for clause in re.split(r"[，,。；;！？!?]", line[1:]):
+            for match in _UNEQUAL.finditer(clause):
+                if not _NEGATION.search(clause[max(0, match.start() - 12):match.start()]):
+                    raise ValueError("unequal or coercive persona relationship rejected")
 
 
 def recount_hunks(patch):
@@ -26,11 +64,12 @@ def recount_hunks(patch):
 
 
 def changed_paths(patch, allowed_existing):
-    if not isinstance(patch, str) or not patch or "\x00" in patch or "\\" in patch:
+    if not isinstance(patch, str) or not patch or "\x00" in patch:
         raise ValueError("invalid patch text")
     lines = patch.splitlines()
     if not lines or len(lines) < 4:
         raise ValueError("invalid unified diff")
+    validate_persona_policy_patch(patch)
     index = 0
     paths = []
     while index < len(lines):

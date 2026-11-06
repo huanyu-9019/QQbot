@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { persona } from './qq-memory.mjs';
 import { assertSearchOnlyAccess } from './qq-search-policy.mjs';
 import { spawnSync } from 'node:child_process';
-import { ensurePublicationLock } from './qq-qzone-lock.mjs';
+import { ensurePublicationLock, publicationDecision, recordPublicationAttempt, queuePublication, digestPublication } from './qq-qzone-lock.mjs';
 
 // All publishing paths use the same account and lock, including manual root calls.
 if (process.getuid?.() === 0) {
@@ -128,7 +128,9 @@ async function sendQzone(content, visibility) {
       });
     });
     if (reply.status !== 'ok' || reply.retcode !== 0 || !reply.data?.tid) {
-      throw new Error('NapCat 发说说失败：retcode=' + String(reply.retcode));
+      const error = new Error('NapCat 发说说失败：retcode=' + String(reply.retcode));
+      error.qqRejected = reply.status !== 'ok' || reply.retcode !== 0;
+      throw error;
     }
     return String(reply.data.tid);
   } finally {
@@ -136,7 +138,7 @@ async function sendQzone(content, visibility) {
   }
 }
 
-const state = readState();
+let state = readState();
 if (mode === '--publish' && state.lastAttempt?.date === today) {
   console.log('今天已有公开发布记录或待核实记录，跳过');
   process.exit(0);
@@ -151,7 +153,6 @@ const supplied = (mode === '--publish' || updateId) && !process.stdin.isTTY
   ? readFileSync(0, 'utf8').trim()
   : '';
 if (updateId && !supplied) throw new Error('更新发布必须提供已审核的说说正文');
-const content = supplied || await generate(recent);
 if (supplied) {
   const length = Array.from(supplied).length;
   if (length < 25 || length > 140 ||
@@ -160,11 +161,26 @@ if (supplied) {
     throw new Error('指定文案未通过长度或内容检查');
   }
 }
+
+// One global gate covers reports, learning notices, route changes and daily posts.
+if (mode !== '--dry-run') {
+  state = queuePublication(state, updateId || 'daily-' + today, supplied);
+  const decision = publicationDecision(state);
+  if (!decision.allowed) {
+    if (updateId) state = withUpdateAttempt(state, {date:today,status:'queued',reason:decision.reason});
+    saveState(state);
+    console.log(JSON.stringify({status:'deferred',reason:decision.reason,nextAttemptAt:decision.nextAttemptAt}));
+    process.exit(0);
+  }
+}
+const generated = supplied || await generate(recent);
+const content = mode === '--dry-run' ? generated : digestPublication(state,generated);
 if (mode === '--dry-run') {
   console.log(content);
   process.exit(0);
 }
 
+if (mode !== '--dry-run') state = recordPublicationAttempt(state);
 if (mode === '--publish' || updateId) {
   const pending = { date: today, status: 'pending' };
   saveState(updateId
@@ -172,12 +188,28 @@ if (mode === '--publish' || updateId) {
     : { ...state, lastAttempt: pending, recent });
 }
 const visibility = mode === '--test-private' ? 64 : 1;
-const tid = await sendQzone(content, visibility);
+if (mode === '--test-private') saveState(state);
+let tid;
+try { tid = await sendQzone(content, visibility); }
+catch (error) {
+  if (error.qqRejected) {
+    state.publicationPolicy = {...state.publicationPolicy,blockedUntil:Date.now()+24*60*60*1000};
+    const failed = {date:today,status:'failed',reason:'qq_rejected'};
+    state = updateId ? withUpdateAttempt(state,failed) : {...state,lastAttempt:failed};
+  }
+  saveState(state);
+  throw error;
+}
 if (mode === '--test-private') {
   console.log(JSON.stringify({ visibility: 'private', tid, content }));
 } else {
   const recentNext = [...recent, { date: today, content }].slice(-7);
   const sent = { date: today, status: 'sent', tid };
+  const merged = {...state.publishedUpdates};
+  for (const queued of state.pendingDigest || []) {
+    if (merged[queued.id]?.status === 'queued') merged[queued.id] = {...sent,merged:true};
+  }
+  state = {...state,pendingDigest:[],publishedUpdates:merged};
   saveState(updateId
     ? { ...withUpdateAttempt(state, sent), recent: recentNext }
     : { ...state, lastAttempt: sent, recent: recentNext });

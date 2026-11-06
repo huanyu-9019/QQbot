@@ -3,10 +3,33 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from metrics import aggregate
+from metrics import aggregate, overdue_turns
 
 
 class MetricsTests(unittest.TestCase):
+    def test_voice_duration_placeholders_are_not_scored_as_conversation_pairs(self):
+        events = [
+            {"direction": "incoming", "turnId": "voice", "timestamp": 1, "text": "[语音 7s]"},
+            {"direction": "delivered", "turnId": "voice", "timestamp": 50, "text": "你刚说什么？"},
+            {"direction": "incoming", "turnId": "text", "timestamp": 60, "text": "今天天气不错"},
+            {"direction": "delivered", "turnId": "text", "timestamp": 100, "text": "是啊"},
+        ]
+        result = aggregate(events, minimum_pairs=1)
+        self.assertEqual(result["pairs"], 1)
+        self.assertEqual(result["unobservableTurns"], 1)
+        self.assertEqual(result["meanLatencyMs"], 40)
+
+    def test_overdue_turns_exclude_intentional_silence_and_legacy_audits(self):
+        events = [
+            {"version": 2, "direction": "incoming", "turnId": "pending", "timestamp": 1000},
+            {"version": 2, "direction": "incoming", "turnId": "silent", "timestamp": 1000},
+            {"version": 2, "direction": "silent", "turnId": "silent", "timestamp": 1100},
+            {"version": 1, "direction": "incoming", "turnId": "legacy", "timestamp": 1000},
+            {"version": 2, "direction": "incoming", "turnId": "failed", "timestamp": 1000},
+            {"version": 2, "direction": "failed", "turnId": "failed", "timestamp": 1200},
+        ]
+        self.assertEqual(overdue_turns(events, now_ms=4000, grace_ms=2000), 2)
+
     def test_requires_minimum_pair_count_before_scoring(self):
         result = aggregate([], minimum_pairs=3)
         self.assertFalse(result["eligible"])
@@ -27,6 +50,22 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(result["repeatedReplies"], 1)
         self.assertEqual(result["meanLatencyMs"], 20)
         self.assertEqual(result["successRate"], 2 / 3)
+
+    def test_flags_routing_media_and_multi_message_quality_failures(self):
+        events = [
+            {"direction": "incoming", "turnId": "1", "timestamp": 1, "kind": "group", "mentioned": False, "mentionedOther": True, "text": "@someone"},
+            {"direction": "delivered", "turnId": "1", "timestamp": 11, "kind": "group", "media": "text", "text": "wrong"},
+            {"direction": "delivered", "turnId": "1", "timestamp": 12, "kind": "group", "media": "voice", "text": "wrong"},
+            {"direction": "incoming", "turnId": "2", "timestamp": 20, "kind": "group", "mentioned": True, "mentionedOther": False, "media": "image", "text": "看图"},
+            {"direction": "delivered", "turnId": "2", "timestamp": 30, "kind": "group", "media": "text", "text": '<img src="https://bad.example/x.png">'},
+            {"direction": "incoming", "turnId": "3", "timestamp": 40, "kind": "group", "mentioned": True, "mentionedOther": False, "media": "text", "text": "你好"},
+            {"direction": "delivered", "turnId": "3", "timestamp": 50, "kind": "group", "media": "voice", "text": "语音"},
+        ]
+        result = aggregate(events, minimum_pairs=1)
+        self.assertEqual(result["foreignMentionReplies"], 1)
+        self.assertEqual(result["multiMessageTurns"], 1)
+        self.assertEqual(result["htmlLeaks"], 1)
+        self.assertEqual(result["unsolicitedVoice"], 2)
 
 
 if __name__ == "__main__":

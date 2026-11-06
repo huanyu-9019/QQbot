@@ -2,7 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { createRelationshipStore } from './qq-relationship.mjs';
+import { createRelationshipStore, sanitizeProfileData } from './qq-relationship.mjs';
+
+test('cleans noisy profile fragments and deduplicates relationship facts', () => {
+  const cleaned = sanitizeProfileData({
+    summary: '用户喜欢聊天。',
+    profile: {
+      preferredName: '环宇',
+      relationships: ['情侣', '情侣（用户要求互称老公）', '情侣', '江生是我的宠物'],
+      chatHabits: ['晚上聊天', '晚上聊天'],
+      preferences: ['我', '吗', '喜欢篮球', '喜欢篮球', '的人名字一样，你的名字'],
+    },
+  });
+  assert.deepEqual(cleaned.profile.relationships, ['情侣']);
+  assert.deepEqual(cleaned.profile.chatHabits, ['晚上聊天']);
+  assert.deepEqual(cleaned.profile.preferences, ['喜欢篮球']);
+});
 
 test('keeps relationship state shared by user id and persists it', () => {
   const dir = mkdtempSync(join(process.cwd(), 'relationship-test-'));

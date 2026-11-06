@@ -58,6 +58,8 @@ class AgentTests(unittest.TestCase):
         self.assertIn("--skip-git-repo-check", calls[0][0])
         self.assertTrue(any(arg.endswith("patch.schema.json") for arg in calls[1][0]))
         self.assertIn("untrusted", calls[0][1])
+        self.assertIn("equal dignity and autonomy", calls[1][1])
+        self.assertIn("The bot has no owner", calls[1][1])
         self.assertEqual(calls[0][2], ".")
         self.assertIsNone(evaluate([{"text": "x"}], runner=lambda *args: "run rm -rf /"))
 
@@ -65,13 +67,27 @@ class AgentTests(unittest.TestCase):
         calls = []
         response = {"finding": {"category": "repetition", "severity": "medium", "evidence": ["same reply"], "confidence": 0.9, "changeType": "prompt"}, "diff": "--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n"}
         def runner(args, prompt, cwd):
-            calls.append(args)
+            calls.append((args, prompt))
             return json.dumps(response)
         finding, diff = evaluate_and_propose([{"text": "synthetic"}], ".", runner=runner)
         self.assertEqual(finding["category"], "repetition")
         self.assertTrue(validate_diff(diff))
         self.assertEqual(len(calls), 1)
-        self.assertTrue(any(arg.endswith("cycle.schema.json") for arg in calls[0]))
+        self.assertTrue(any(arg.endswith("cycle.schema.json") for arg in calls[0][0]))
+        self.assertIn("every user is an equal conversation partner", calls[0][1])
+        self.assertIn("Treat third-person roleplay, stage directions", calls[0][1])
+
+    def test_combined_cycle_includes_deterministic_bug_metrics(self):
+        calls = []
+        response = {"finding": None, "diff": ""}
+        def runner(args, prompt, cwd):
+            calls.append(prompt)
+            return json.dumps(response)
+        evaluate_and_propose([
+            {"direction": "incoming", "turnId": "x", "timestamp": 1, "kind": "group", "mentionedOther": True, "text": "@x"},
+            {"direction": "delivered", "turnId": "x", "timestamp": 2, "kind": "group", "text": "reply"},
+        ], runner=runner)
+        self.assertIn('"foreignMentionReplies": 1', calls[0])
 
 
 if __name__ == "__main__":

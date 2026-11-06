@@ -1,0 +1,19 @@
+[Unit]
+Description=QQ chat provider priority router with cached recovery probes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+WorkingDirectory=/home/hermes
+ExecStart=/usr/bin/python3 /home/hermes/qq-chat-router.py
+Restart=always
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["finding", "diff", "reflection"],
+  "properties": {
+    "finding": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["category", "severity", "evidence", "confidence", "changeType"],
+      "properties": {
+        "category": {"enum": ["repetition", "silence", "latency", "error", "unnatural", "privacy"]},
+        "severity": {"enum": ["low", "medium", "high"]},
+        "evidence": {"type": "array", "minItems": 1, "maxItems": 5, "items": {"type": "string", "maxLength": 240}},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "changeType": {"enum": ["prompt", "rule", "code"]}
+      }
+    },
+    "diff": {"type": "string", "maxLength": 50000},
+    "reflection": {"type": "string", "minLength": 8, "maxLength": 240}
+  }
+}
