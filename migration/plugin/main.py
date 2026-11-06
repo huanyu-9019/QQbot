@@ -113,6 +113,10 @@ class JiangshengMigration(Star):
         original = provider.get_audio
         async def synthesize(text):
             event = current_message_event.get()
+            issue = quality_issue(text, event.message_str if event else '')
+            if issue:
+                self.write('quality', event, outcome=issue, media='voice')
+                raise ValueError('internal analysis blocked before speech synthesis')
             self.write('voice_source', event, text=text, media='voice')
             try:
                 return await original(text)
