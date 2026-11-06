@@ -10,8 +10,11 @@ authorized_keys
 *.bak*
 *.save*
 node_modules/
+upstream/
+controller-baseline/
 __pycache__/
 *.pyc
+.migration-state/
 *.bundle
 !qq-evolution/*.schema.json
 qq-memory/

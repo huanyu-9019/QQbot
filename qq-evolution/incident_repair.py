@@ -3,6 +3,20 @@ import datetime,json,os,re,shutil,subprocess,sys
 from pathlib import Path
 
 def repair(action):
+    import fcntl
+    with open('/run/lock/jiangsheng-responder.lock', 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return repair_locked(action)
+
+def repair_locked(action):
+    marker = Path('/etc/jiangsheng-runtime')
+    if marker.exists() and marker.read_text().strip() == 'astrbot':
+        if action not in {'use_deepseek', 'restart_api', 'restart_bridge'}:
+            raise ValueError('unknown AstrBot recovery action')
+        unit = 'qq-chat-router.service' if action == 'use_deepseek' else 'jiangsheng-astrbot.service'
+        subprocess.run(['/usr/bin/systemctl', 'restart', unit], check=True, timeout=60)
+        print(json.dumps({'action': action, 'executed': True, 'runtime': 'astrbot'}))
+        return
     if action=='use_deepseek':
         import yaml
         config=Path('/home/hermes/.hermes/config.yaml')

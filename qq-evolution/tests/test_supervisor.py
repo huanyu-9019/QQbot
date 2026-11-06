@@ -21,6 +21,8 @@ class SupervisorTests(unittest.TestCase):
                 patch.multiple(service, STATE=Path(tmp) / "state.json", LOCK=Path(tmp) / "lock"), \
                 patch.dict(os.environ, {"QQ_EVOLUTION_COOLDOWN": "0", "QQ_EVOLUTION_GIT_REMOTE": ""}), \
                 patch.object(service, "fetch_remote_events", return_value=events), \
+                patch.object(service, "run_learning_iteration"), \
+                patch.object(service, "flush_learning_notices"), \
                 patch.object(service, "evaluate_and_propose", return_value=(None, "")) as model:
             service.run_cycle()
             service.run_cycle()
@@ -77,3 +79,13 @@ class SupervisorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreservedBaselineTests(unittest.TestCase):
+    def test_learning_fetch_refreshes_monitor_freshness(self):
+        from unittest.mock import patch
+        with patch.object(service, "fetch_remote_events", return_value=[{"text": "safe"}]), \
+             patch.object(service, "record_monitor_health") as heartbeat:
+            rows = service.fetch_learning_events()
+        self.assertEqual(rows, [{"text": "safe"}])
+        self.assertEqual(heartbeat.call_args.kwargs.keys(), {"lastFetch"})

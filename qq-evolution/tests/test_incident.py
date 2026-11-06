@@ -4,9 +4,10 @@ sys.path.insert(0,str(Path(__file__).parents[1]))
 from incident import needs_repair, validate_decision, repair_incident
 
 class IncidentTests(unittest.TestCase):
- def test_primary_down_triggers_repair_even_when_backup_works(self):
-  self.assertTrue(needs_repair({'primary':False,'deepseek':True,'napcat':True,'reply':True}))
-  self.assertFalse(needs_repair({'primary':True,'deepseek':True,'napcat':True,'reply':True}))
+ def test_primary_down_does_not_interrupt_healthy_fallback(self):
+  self.assertFalse(needs_repair({'primary':False,'deepseek':True,'api':True,'napcat':True,'reply':True}))
+  self.assertFalse(needs_repair({'primary':True,'deepseek':True,'api':True,'napcat':True,'reply':True}))
+  self.assertTrue(needs_repair({'primary':True,'deepseek':True,'api':False,'napcat':True,'reply':True}))
  def test_unknown_action_rejected(self):
   with self.assertRaises(ValueError):validate_decision({'action':'shell','reason':'x','diff':''})
  def test_recovery_requires_fresh_probe_after_action(self):
@@ -19,5 +20,17 @@ class IncidentTests(unittest.TestCase):
   def broken(h):raise RuntimeError('model down')
   calls=[]
   result=repair_incident({'primary':False,'deepseek':True,'napcat':True},broken,
-   lambda d:calls.append(d['action']),lambda:{'primary':True,'deepseek':True,'napcat':True,'reply':True})
+   lambda d:calls.append(d['action']),lambda:{'primary':True,'deepseek':True,'api':True,'napcat':True,'reply':True})
   self.assertEqual(calls,['use_deepseek']);self.assertEqual(result['status'],'recovered')
+
+
+class PreservedBaselineTests(unittest.TestCase):
+ def test_primary_down_does_not_trigger_repair_when_fallback_replies(self):
+  self.assertFalse(needs_repair({'primary':False,'deepseek':True,'api':True,'napcat':True,'reply':True,'unanswered':0}))
+  self.assertFalse(needs_repair({'primary':True,'deepseek':True,'api':True,'napcat':True,'reply':True,'unanswered':0}))
+
+ def test_unavailable_chat_routes_trigger_repair(self):
+  self.assertTrue(needs_repair({'primary':False,'deepseek':False,'api':True,'napcat':True,'reply':False}))
+
+ def test_overdue_unanswered_turns_trigger_repair(self):
+  self.assertTrue(needs_repair({'api':True,'napcat':True,'reply':False,'unanswered':1}))

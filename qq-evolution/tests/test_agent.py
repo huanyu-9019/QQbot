@@ -76,3 +76,17 @@ class AgentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreservedBaselineTests(unittest.TestCase):
+    def test_combined_cycle_includes_deterministic_bug_metrics(self):
+        calls = []
+        response = {"finding": None, "diff": ""}
+        def runner(args, prompt, cwd):
+            calls.append(prompt)
+            return json.dumps(response)
+        evaluate_and_propose([
+            {"direction": "incoming", "turnId": "x", "timestamp": 1, "kind": "group", "mentionedOther": True, "text": "@x"},
+            {"direction": "delivered", "turnId": "x", "timestamp": 2, "kind": "group", "text": "reply"},
+        ], runner=runner)
+        self.assertIn('"foreignMentionReplies": 1', calls[0])

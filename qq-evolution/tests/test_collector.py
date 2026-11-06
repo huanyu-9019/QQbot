@@ -9,6 +9,17 @@ from collector import fetch_remote_events, read_events, redact_text, sanitize_re
 
 
 class CollectorTests(unittest.TestCase):
+    def test_astrbot_speaker_media_and_failed_transcription_survive_collection(self):
+        record = dict(timestamp=1, direction='incoming', kind='group', sessionHash='a'*64,
+                      text='今天天气好', speakerHash='b'*64, media='voice', hasTranscript=True,
+                      runtime='astrbot', replyTo=['jiangsheng:123'])
+        safe = sanitize_record(record)
+        self.assertEqual('b'*64, safe.get('speakerHash'))
+        self.assertEqual('voice', safe.get('media'))
+        self.assertTrue(safe.get('hasTranscript'))
+        quality = sanitize_record(record | {'direction': 'quality', 'outcome': 'stt_failed'})
+        self.assertIsNotNone(quality)
+
     def test_redacts_credentials_phone_qq_and_address_patterns(self):
         text = "api_key=sk-live-abcdefghijklmnop phone 13812345678 QQ:123456789 地址：北京市朝阳区幸福路12号"
         redacted = redact_text(text)
@@ -53,3 +64,25 @@ class CollectorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreservedBaselineTests(unittest.TestCase):
+    def test_sanitizes_versioned_intentional_silence_without_chat_text(self):
+        row = sanitize_record({"timestamp": 1, "direction": "silent", "kind": "group", "sessionHash": "a" * 64,
+                               "text": "", "turnId": "turn", "version": 2, "outcome": "group_cooldown"})
+        self.assertEqual(row["direction"], "silent")
+        self.assertEqual(row["version"], 2)
+        self.assertEqual(row["outcome"], "group_cooldown")
+
+    def test_sanitizes_delivery_failure_event_for_incident_detection(self):
+        row = sanitize_record({"timestamp": 1, "direction": "failed", "kind": "private", "sessionHash": "a" * 64,
+                               "text": "", "turnId": "turn", "version": 2, "outcome": "reply_failed"})
+        self.assertEqual(row["direction"], "failed")
+        self.assertEqual(row["outcome"], "reply_failed")
+
+    def test_keeps_only_safe_routing_and_media_metadata(self):
+        row = sanitize_record({"timestamp": 1, "direction": "incoming", "kind": "group", "sessionHash": "a" * 64,
+                               "text": "@someone", "mentioned": False, "mentionedOther": True, "media": "image"})
+        self.assertEqual(row["mentioned"], False)
+        self.assertEqual(row["mentionedOther"], True)
+        self.assertEqual(row["media"], "image")

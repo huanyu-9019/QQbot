@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>江生管理台</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">QQ · ASTRBOT</p>
+        <h1>江生管理台</h1>
+      </div>
+      <div id="top-actions" class="top-actions hidden">
+        <span id="last-check" class="muted"></span>
+        <button id="refresh-all" class="button secondary">刷新</button>
+        <button id="logout" class="button ghost">退出</button>
+      </div>
+    </header>
+
+    <section id="login-card" class="card login-card">
+      <h2>江生管理台登录</h2>
+      <p class="muted">管理员口令可管理配置；只读口令只能查看状态和档案。</p>
+      <form id="login-form">
+        <label for="login-password">访问口令</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="256">
+        <button class="button primary full" type="submit">登录</button>
+      </form>
+      <p id="login-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="app" class="hidden">
+      <nav class="tabs" aria-label="管理页面">
+        <button class="tab active" data-view="overview">总览</button>
+        <button class="tab write-only" data-view="persona">人格</button>
+        <button class="tab write-only" data-view="features">能力开关</button>
+        <button class="tab" data-view="models">模型</button>
+        <button class="tab write-only" data-view="services">服务</button>
+        <button class="tab write-only" data-view="updates">更新</button>
+        <button class="tab" data-view="backups">备份</button>
+        <button class="tab" data-view="profile">用户档案</button>
+        <button class="tab write-only" data-view="account">账户</button>
+      </nav>
+
+      <section id="view-overview" class="view">
+        <div class="section-heading">
+          <div><p class="eyebrow">运行状态</p><h2>服务总览</h2></div>
+        </div>
+        <div id="evolution-state" class="muted evolution-state">正在读取两台服务器状态…</div>
+        <div id="evolution-cards" class="service-grid"></div>
+        <div class="card evolution-details">
+          <div class="section-heading compact"><h3>聊天线路</h3><span id="evolution-reply" class="muted">—</span></div>
+          <div id="evolution-routes" class="metric-grid"></div>
+          <div class="info-row"><span>图片理解</span><strong id="evolution-vision">—</strong></div>
+          <div class="info-row"><span>上次监听</span><strong id="evolution-fetch">—</strong></div>
+          <div class="info-row"><span>最近评估</span><strong id="evolution-iteration">—</strong></div>
+          <div class="info-row"><span>最近改动</span><strong id="evolution-change">—</strong></div>
+          <div id="evolution-learning-metrics" class="metric-grid"></div>
+          <p id="evolution-reason" class="small muted"></p>
+          <h3>Codex 最近实际发布</h3><div id="evolution-commits"></div>
+          <h3>最近学习与反思</h3><div id="evolution-learning"></div>
+        </div>
+        <div id="service-cards" class="service-grid"></div>
+        <div class="card">
+          <div class="section-heading compact"><h3>聚合指标</h3><span class="muted">不显示聊天内容</span></div>
+          <div id="metrics" class="metric-grid"></div>
+        </div>
+        <div class="card model-summary">
+          <div><span class="muted">当前实际模型</span><strong id="overview-primary">—</strong></div>
+          <div><span class="muted">备用模型</span><strong id="overview-fallback">—</strong></div>
+        </div>
+        <div class="card note-card">
+          <h3>QQ 登录</h3>
+          <p class="muted">扫码和验证仍由 NapCat 处理；管理台不会重启 NapCat。</p>
+          <a id="napcat-link" class="button secondary" href="http://39.105.219.112:6099/webui" target="_blank" rel="noopener noreferrer">打开 NapCat WebUI</a>
+        </div>
+      </section>
+
+      <section id="view-persona" class="view hidden write-only">
+        <div class="section-heading"><div><p class="eyebrow">对话人格</p><h2>编辑人格规则</h2></div></div>
+        <div class="card">
+          <p class="muted">保存会自动备份并重载聊天服务。留空内容不会保存。</p>
+          <textarea id="persona-text" rows="18" spellcheck="false" aria-label="人格规则"></textarea>
+          <div class="form-row"><span id="persona-count" class="muted">0 字符</span><button id="save-persona" class="button primary">保存并应用</button></div>
+          <p id="persona-result" class="result" role="status"></p>
+        </div>
+      </section>
+
+      <section id="view-features" class="view hidden write-only">
+        <div class="section-heading"><div><p class="eyebrow">QQ 对话</p><h2>能力开关</h2></div></div>
+        <div class="card">
+          <p class="muted">只修改下列现有开关；保存后会重载桥接。群聊冷却等数值不在此页面调整。</p>
+          <div id="feature-list" class="feature-list">
+            <label class="toggle-row"><span><strong>消息队列</strong><small>处理繁忙时的待回复消息</small></span><input type="checkbox" data-feature="queueEnabled"></label>
+            <label class="toggle-row"><span><strong>私聊/提及优先通道</strong><small>让私聊和明确提及优先处理</small></span><input type="checkbox" data-feature="priorityLane"></label>
+            <label class="toggle-row"><span><strong>合并群聊连续文字</strong><small>合并短时间内连续发送的文字</small></span><input type="checkbox" data-feature="coalesceGroupText"></label>
+            <label class="toggle-row"><span><strong>群聊回复</strong><small>允许桥接处理群聊对话</small></span><input type="checkbox" data-feature="groupEnabled"></label>
+            <label class="toggle-row"><span><strong>输入状态接话</strong><small>检测到输入状态时允许短暂接话</small></span><input type="checkbox" data-feature="typingEnabled"></label>
+            <label class="toggle-row"><span><strong>最近图片引用</strong><small>允许根据最近收到的图片回答追问</small></span><input type="checkbox" data-feature="recentImagesEnabled"></label>
+            <label class="toggle-row"><span><strong>图片识别</strong><small>接收图片并交给模型识别</small></span><input type="checkbox" data-feature="imagesEnabled"></label>
+            <label class="toggle-row"><span><strong>收藏表情发送</strong><small>允许收集并发送聊天中的收藏表情</small></span><input type="checkbox" data-feature="stickersEnabled"></label>
+            <label class="toggle-row"><span><strong>网络表情</strong><small>允许从网络检索表情图片</small></span><input type="checkbox" data-feature="onlineStickersEnabled"></label>
+            <label class="toggle-row"><span><strong>网络表情检索</strong><small>启用网络检索来源</small></span><input type="checkbox" data-feature="networkStickersEnabled"></label>
+            <label class="toggle-row"><span><strong>收藏表情库</strong><small>允许保存并复用收集到的表情</small></span><input type="checkbox" data-feature="learnedStickersEnabled"></label>
+          </div>
+          <div class="form-row"><span></span><button id="save-features" class="button primary">保存并应用</button></div>
+          <p id="features-result" class="result" role="status"></p>
+        </div>
+        <div class="card">
+          <div class="section-heading compact"><h3>主动聊天与定时互动</h3></div>
+          <p class="muted">对私聊和群聊都适用。每日随机时点覆盖全天 24 小时（包括凌晨）；当天随机时点前有活动才会问候。连续无新消息达到设定天数后主动提醒。活跃时间从开启后的新消息开始记录，不回溯旧会话。</p>
+          <label class="toggle-row"><span><strong>开启主动互动</strong><small>按会话活跃情况随机发起聊天</small></span><input id="proactive-enabled" type="checkbox"></label>
+          <div class="form-row proactive-settings">
+            <label>首次沉寂提醒天数<input id="proactive-idle-days" type="number" min="1" max="14" step="1"></label>
+            <label>重复提醒间隔天数<input id="proactive-repeat-days" type="number" min="1" max="30" step="1"></label>
+          </div>
+          <div class="form-row"><span></span><button id="save-proactive" class="button primary">保存并应用</button></div>
+          <p id="proactive-result" class="result" role="status"></p>
+        </div>
+      </section>
+
+      <section id="view-models" class="view hidden">
+        <div class="section-heading"><div><p class="eyebrow">模型路由</p><h2>模型设置</h2></div></div>
+        <div class="card">
+          <div class="info-row"><span>当前实际模型</span><strong id="model-primary">—</strong></div>
+          <div class="info-row"><span>自动备用链</span><strong id="model-fallback">—</strong></div>
+          <p class="muted">模型顺序以实时路由列表为准。每 5 分钟探测恢复，优先切回前面可用的线路。</p>
+          <div hidden>
+          <label for="model-select">将已配置模型设为主模型</label>
+          <select id="model-select"></select>
+          <p id="model-warning" class="warning hidden">该模型目前已在备用链中；设为主模型后，聊天路由会跳过相同线路，不会有独立备用线路。</p>
+          <div class="form-row"><span></span><button id="save-model" class="button primary">切换主模型并重载</button></div>
+          </div>
+          <p id="model-result" class="result" role="status"></p>
+          <p class="small muted">只可选当前已配置的模型标识。页面不显示或修改 API 地址、Key 和备用链。</p>
+        </div>
+      </section>
+
+      <section id="view-services" class="view hidden write-only">
+        <div class="section-heading"><div><p class="eyebrow">受限操作</p><h2>服务管理</h2></div></div>
+        <div class="card">
+          <p class="muted">只提供 AstrBot 江生 和 聊天服务重载。NapCat 不在此重启，以免打断 QQ 扫码或会话。</p>
+          <div class="service-action"><div><strong>AstrBot 江生</strong><small>重载模型配置和请求服务</small></div><button class="button secondary restart" data-service="hermes-api">重载 API</button></div>
+          <div class="service-action"><div><strong>聊天服务</strong><small>重载消息处理和能力设置</small></div><button class="button secondary restart" data-service="qq-bridge">重载桥接</button></div>
+          <p id="service-result" class="result" role="status"></p>
+        </div>
+      </section>
+
+      <section id="view-updates" class="view hidden">
+        <div class="section-heading"><div><p class="eyebrow">用户主动更新</p><h2>更新管理</h2></div></div>
+        <div class="card">
+          <div class="form-row"><div><strong>AstrBot 江生</strong><p id="hermes-version" class="muted">读取中…</p></div><button id="check-hermes" class="button secondary">检查 AstrBot 更新</button></div>
+          <div class="form-row"><div><strong>Ubuntu 软件包</strong><p class="muted">安装前需要你在阿里云控制台创建 ECS 快照。</p></div><button id="refresh-packages" class="button secondary">刷新列表</button></div>
+          <div id="package-list" class="package-list"></div>
+          <div class="update-actions">
+            <button id="show-update-plan" class="button secondary">查看 AstrBot 更新计划</button>
+            <button id="apply-hermes" class="button primary">备份并更新 Hermes</button>
+          </div>
+          <p id="update-result" class="result" role="status"></p>
+          <p class="small muted">更新由你逐项确认；系统更新可能重启相关服务，但管理台不会重启主机。AstrBot 由 Codex 完成测试、快照、发布和异常回退。</p>
+        </div>
+      </section>
+
+      <section id="view-backups" class="view hidden">
+        <div class="section-heading"><div><p class="eyebrow">可恢复副本</p><h2>配置备份</h2></div><button id="refresh-backups" class="button secondary">刷新</button></div>
+        <div id="backup-list" class="backup-list"></div>
+      </section>
+
+      <section id="view-profile" class="view hidden">
+        <div class="section-heading"><div><p class="eyebrow">QQ 用户</p><h2>角色档案</h2></div></div>
+        <div class="card">
+          <p class="muted">输入 QQ 号查看已记录的角色资料。此页面只读，不能修改或删除档案。</p>
+          <form id="profile-form" class="form-row">
+            <label for="profile-qq">QQ 号</label>
+            <input id="profile-qq" inputmode="numeric" pattern="[0-9]{5,12}" maxlength="12" required>
+            <button class="button secondary" type="submit">查询</button>
+          </form>
+          <p id="profile-result" class="result" role="status"></p>
+        </div>
+        <div id="profile-card" class="card hidden">
+          <div class="section-heading compact"><h3>资料摘要</h3><span class="pill ok">只读</span></div>
+          <div id="profile-fields"></div>
+          <h3>关系状态</h3><div id="relationship-fields"></div>
+        </div>
+      </section>
+
+      <section id="view-account" class="view hidden write-only">
+        <div class="section-heading"><div><p class="eyebrow">管理员</p><h2>修改口令</h2></div></div>
+        <div class="card">
+          <form id="password-form" class="stack">
+            <label for="current-password">当前口令</label><input id="current-password" type="password" autocomplete="current-password" required>
+            <label for="new-password">新口令（至少 16 个字符）</label><input id="new-password" type="password" autocomplete="new-password" minlength="16" maxlength="256" required>
+            <button class="button primary" type="submit">修改口令并退出</button>
+          </form>
+          <p id="password-result" class="result" role="status"></p>
+        </div>
+      </section>
+
+      <div id="toast" class="toast hidden" role="status"></div>
+    </section>
+  </main>
+</body>
+</html>

@@ -50,11 +50,13 @@ def format_report(control, production, now):
     def resources(row):
         return f"内存余{row['memoryFree']}/{row['memoryTotal']}M，盘余{row['diskFree']}/{row['diskTotal']}G，换页余{row['swapFree']}M"
     model=production.get('model',{})
-    reply='可回复' if model.get('reply') else '回复异常'
+    reply='模型链可用' if model.get('reply') else '回复链异常'
+    gaps=int(model.get('unanswered',0))
     path='主链正常' if model.get('primary') else '主链故障'
     backup='DeepSeek可用' if model.get('deepseek') else 'DeepSeek异常'
     text=(f"{dt.month}月{dt.day}日{dt:%H:%M} Codex机监听{control['monitor']}、评估{control['evaluation']}，{resources(control)}。"
-          f"QQ机进程{'在' if production['bridge'] else '停'}、API{'在' if production['api'] else '异常'}、{reply}，{path}，{backup}，{resources(production)}。")
+          f"QQ机进程{'在' if production['bridge'] else '停'}、API{'在' if production['api'] else '异常'}、{reply}"
+          f"{'，未闭环'+str(gaps)+'条' if gaps else ''}，{path}，{backup}，{resources(production)}。")
     if not 25<=len(text)<=140:
         raise ValueError('public status report length invalid')
     return text
@@ -65,6 +67,47 @@ def save_schedule(data):
     tmp.write_text(json.dumps(data),encoding='utf-8')
     os.chmod(tmp,0o600)
     tmp.replace(SCHEDULE)
+
+
+def production_probe_script():
+    script='import json,shutil,subprocess,time,urllib.request\nfrom pathlib import Path\n'+inspect.getsource(probe)+'\nprint(json.dumps(probe()))\n'
+    script=script.replace('print(json.dumps(probe()))',
+        "data=probe()\ntry:\n h=json.loads(urllib.request.urlopen('http://127.0.0.1:8650/health',timeout=5).read())\n routes={x['name']:x['available'] for x in h.get('routes',[])}\n data['model']={'primary':routes.get('gemini',False),'deepseek':routes.get('deepseek',False),'reply':any(routes.values()),'active':h.get('active')}\nexcept Exception: data['model']={}\nprint(json.dumps(data))")
+    audit_script=("try:\n now=int(time.time()*1000); pending={}\n"
+      " for path in sorted(Path('/home/hermes/qq-audit').glob('*.jsonl'))[-2:]:\n"
+      "  for line in path.read_text(encoding='utf-8',errors='replace').splitlines()[-2000:]:\n"
+      "   try: row=json.loads(line)\n   except json.JSONDecodeError: continue\n"
+      "   if int(row.get('version',1))<2 or now-int(row.get('timestamp',0))>600000: continue\n"
+      "   turn=row.get('turnId'); direction=row.get('direction')\n   if not turn: continue\n"
+      "   if direction=='incoming': pending[turn]=int(row['timestamp'])\n"
+      "   elif direction in ('delivered','silent'): pending.pop(turn,None)\n"
+      "   elif direction=='failed': pending[turn]=min(pending.get(turn,int(row['timestamp'])),int(row['timestamp'])-180000)\n"
+      " gaps=sum(now-ts>=180000 for ts in pending.values())\n"
+      " data['model']['unanswered']=gaps\n data['model']['reply']=bool(data['model'].get('reply')) and gaps==0\n"
+      "except Exception: data['model']['reply']=False; data['model']['unanswered']=-1\n")
+    script=script.replace('print(json.dumps(data))',audit_script+'print(json.dumps(data))')
+    from runtime_support import runtime_ready, probe_runtime
+    script = script.replace('print(json.dumps(data))',
+        "runtime=probe_runtime()\nif runtime.get('runtime')=='astrbot':\n data.update(bridge=runtime['bridge'],api=runtime['api'],runtime='astrbot',qqConnected=runtime['qqConnected'])\n data['model'].update(reply=runtime['reply'],unanswered=runtime['unanswered'])\nprint(json.dumps(data))")
+    return inspect.getsource(runtime_ready) + '\n' + inspect.getsource(probe_runtime) + '\n' + script
+
+
+def publish_event(event_id, text):
+    if not event_id or not all(ch.isalnum() or ch in '-_' for ch in event_id):
+        raise ValueError('invalid event id')
+    if not 25 <= len(text) <= 140:
+        raise ValueError('public update length invalid')
+    script=(
+        'import json,subprocess\nfrom pathlib import Path\n'
+        f'r=subprocess.run(["/home/hermes/.hermes/tools/node-26.12.1-linux-x64/bin/node","/home/hermes/qq-qzone-post.mjs","--publish-update",{event_id!r}],input={text!r},text=True,capture_output=True,timeout=100)\n'
+        's=json.loads(Path("/home/hermes/qq-qzone-state.json").read_text())\n'
+        f'v=s.get("publishedUpdates",{{}}).get({event_id!r},{{}})\n'
+        'print(json.dumps({"sent":v.get("status")=="sent" and bool(v.get("tid")),"publisher_exit":r.returncode}))\n'
+    )
+    result=remote_script(script,timeout=130)
+    if not result.get('sent'):
+        raise RuntimeError('QQ Space publication unconfirmed')
+    return True
 
 def main():
     now=int(time.time())
@@ -96,10 +139,7 @@ def main():
             control['evaluation']='自修已验'
     except (FileNotFoundError,json.JSONDecodeError):
         pass
-    script='import json,shutil,subprocess\nfrom pathlib import Path\n'+inspect.getsource(probe)+'\nprint(json.dumps(probe()))\n'
-    script=script.replace('print(json.dumps(probe()))',
-        "data=probe()\nr=subprocess.run(['/home/hermes/.hermes/tools/node-26.12.1-linux-x64/bin/node','/home/hermes/qq-model-health.mjs'],capture_output=True,text=True,timeout=75)\ntry: data['model']=json.loads(r.stdout)\nexcept (ValueError,TypeError): data['model']={}\nprint(json.dumps(data))")
-    production=remote_script(script)
+    production=remote_script(production_probe_script())
     report=format_report(control,production,now)
     ident='dual-health-'+str(schedule['start'])+'-'+slot
     publish_script=(
