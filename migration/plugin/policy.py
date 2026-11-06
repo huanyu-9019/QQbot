@@ -69,6 +69,8 @@ def legacy_summary(record):
 
 def quality_issue(text, incoming=''):
     text = str(text or '')
+    if '<QQ_SILENT>' in text and text.strip() != '<QQ_SILENT>':
+        return 'mixed_silence_marker'
     if _ANALYSIS.search(text):
         return 'analysis_leak'
     letters = len(re.findall(r'[a-z]', text, re.I))
