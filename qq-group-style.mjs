@@ -137,6 +137,7 @@ export function createGroupStyleLearning({
       const avg = total.chars / n;
       const descriptors = [avg <= 18 ? '平均偏短，常用短句' : avg >= 60 ? '平均偏长，常用完整句' : '句子长度中等'];
       if (avg <= 18) descriptors.push('本群闲聊回复优先一句收住，不另发气氛补句或无必要的追问；具体问题仍须答清');
+      if (avg <= 18) descriptors.push('本群未明确叫你、也无新问题的附和或原话复述，若没有新增信息可保持沉默，不逐条接话；直接提问仍正常回应');
       if (total.questions / n >= 0.25) descriptors.push('提问较常见');
       if (total.exclamations / n >= 0.25) descriptors.push('感叹语气较常见');
       if (total.ellipses / n >= 0.2) descriptors.push('停顿和省略较常见');
