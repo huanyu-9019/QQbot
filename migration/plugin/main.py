@@ -44,6 +44,7 @@ class JiangshengMigration(Star):
         self.tasks = []
         self.patched = []
         self.patched_tts = []
+        self.started_at = time.time()
         self.last_incoming = None
         self.last_sent = None
         self.last_prune = 0
@@ -94,7 +95,7 @@ class JiangshengMigration(Star):
                 staging = getattr(obj, 'staging', None)
                 if staging is not None:
                     companion_ready = bool(getattr(staging, '_accepting', False))
-            state = dict(timestamp=time.time(), runtime='astrbot', qqConnected=connected, companionReady=companion_ready,
+            state = dict(timestamp=time.time(), startedAt=self.started_at, runtime='astrbot', qqConnected=connected, companionReady=companion_ready,
                          lastIncoming=self.last_incoming, lastSent=self.last_sent, acceptance=self.is_test)
             p = self.root / 'jiangsheng-health.json'
             temp = p.with_suffix('.tmp')
