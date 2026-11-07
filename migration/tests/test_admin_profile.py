@@ -5,6 +5,31 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+
+class ProfileAccessTests(unittest.TestCase):
+    def test_restricted_person_requires_admin_before_reading_profile(self):
+        spec = importlib.util.spec_from_file_location('profile_access_server', Path(__file__).parents[1] / 'admin/server.py')
+        server = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(server)
+        for role, qq, expected in [('readonly', '1474983035', 403),
+                                   ('admin', '1474983035', 200),
+                                   ('readonly', '123456', 200),
+                                   (None, '1474983035', 403)]:
+            with self.subTest(role=role, qq=qq):
+                handler = SimpleNamespace(path='/api/profile?qq=' + qq,
+                    require_session=Mock(return_value=('token', {'role': role})),
+                    send_json=Mock())
+                with patch.object(server, 'helper_call', return_value={}) as helper:
+                    server.Handler.do_GET(handler)
+                if expected == 403:
+                    self.assertEqual(handler.send_json.call_args.args[1], 403)
+                    helper.assert_not_called()
+                else:
+                    helper.assert_called_once_with({'action': 'profile', 'qq': qq}, timeout=20)
+                    self.assertEqual(len(handler.send_json.call_args.args), 1)
 
 
 class NativeProfileTests(unittest.TestCase):

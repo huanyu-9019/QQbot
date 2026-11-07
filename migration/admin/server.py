@@ -291,11 +291,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 503)
             return
         if path == "/api/profile":
-            if not self.require_session():
+            session_result = self.require_session()
+            if not session_result:
                 return
             try:
                 query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
                 qq = profile_query(query.get("qq", [""])[0])
+                if qq == "1474983035" and session_result[1].get("role") != "admin":
+                    self.send_json({"error": "该用户档案仅管理员可查看"}, 403)
+                    return
                 self.send_json(profile_view(helper_call({"action": "profile", "qq": qq}, timeout=20)))
             except ValueError as exc:
                 self.send_json({"error": str(exc)}, 400)
