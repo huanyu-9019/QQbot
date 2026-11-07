@@ -7,6 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 _ANALYSIS = re.compile(r'\b(?:initial assessment|now assessing|debugging artifacts|chain[ -]of[ -]thought|the interaction (?:involves|indicates)|the user (?:expresses|is asking|wants|appears|seems)|the response should)\b|<(?:think|analysis)>', re.I)
+_RESPONSE_REASONING = re.compile(r'\b(?:the repeated use of .{1,100}? appears to be|further investigation is needed to ascertain|considering both options are unclear|the guidelines suggest active participation)\b', re.I | re.S)
 _UNEQUAL = re.compile(r'主人|奴隶|奴仆|所有者|支配者|服从|归.*所有|master|slave|owner', re.I)
 
 
@@ -71,7 +72,7 @@ def quality_issue(text, incoming=''):
     text = str(text or '')
     if '<QQ_SILENT>' in text and text.strip() != '<QQ_SILENT>':
         return 'mixed_silence_marker'
-    if _ANALYSIS.search(text):
+    if _ANALYSIS.search(text) or _RESPONSE_REASONING.search(text):
         return 'analysis_leak'
     letters = len(re.findall(r'[a-z]', text, re.I))
     allowed = re.search(r'英文|英语|English|翻译|translate|代码|code|```', incoming, re.I)
