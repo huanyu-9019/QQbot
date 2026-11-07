@@ -109,10 +109,22 @@ class JiangshengMigration(Star):
                 await asyncio.to_thread(prune_media, self.root / 'plugin_data/astrbot_plugin_message_recorder/media')
             await asyncio.sleep(10)
 
+    def voice_requested(self, event):
+        """Authorize audio only from this turn, never from earlier song requests."""
+        if not event:
+            return False
+        text = event.message_str or ''
+        return bool(re.search(
+            r'发(?:一条|个)?语音|用语音|语音(?:回复|回答)|唱(?:一下|一句|一首|首|歌|给)|给我唱|我要听|想听你唱|来首歌',
+            text)) and not bool(re.search(r'不要.*语音|别.*语音|只.*文字|不要唱|别唱', text))
+
     def patch_tts(self, provider):
         original = provider.get_audio
         async def synthesize(text):
             event = current_message_event.get()
+            if not self.voice_requested(event):
+                self.write('quality', event, outcome='unsolicited_voice', media='voice')
+                raise ValueError('voice requires a request in the current turn')
             issue = quality_issue(text, event.message_str if event else '')
             if issue:
                 self.write('quality', event, outcome=issue, media='voice')
@@ -141,6 +153,15 @@ class JiangshengMigration(Star):
             if sending and quality_issue(text, event.message_str if event else ''):
                 self.write('quality', event, scope=scope, outcome=quality_issue(text))
                 raise ValueError('internal analysis blocked before QQ delivery')
+            if sending and voice and not self.voice_requested(event):
+                self.write('quality', event, scope=scope, outcome='unsolicited_voice', media='voice')
+                raise ValueError('voice requires a request in the current turn')
+            if sending and event:
+                if event.get_extra('jiangsheng_delivered') or event.get_extra('jiangsheng_send_pending'):
+                    self.write('quality', event, scope=scope, outcome='multi_message_turn')
+                    raise ValueError('only one QQ message is permitted per turn')
+                # Reserve before awaiting transport so concurrent sends cannot race.
+                event.set_extra('jiangsheng_send_pending', True)
             try:
                 result = await original(action, **params)
                 if sending:
@@ -155,6 +176,9 @@ class JiangshengMigration(Star):
                 if sending:
                     self.write('failed', event, scope=scope, outcome='reply_failed')
                 raise
+            finally:
+                if sending and event:
+                    event.set_extra('jiangsheng_send_pending', False)
         bot.call_action = audited
         self.patched.append((bot, original))
 
