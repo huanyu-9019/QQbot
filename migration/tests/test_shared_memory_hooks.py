@@ -12,6 +12,7 @@ for n in cls.body:n.decorator_list=[]
 current=contextvars.ContextVar('current',default=None)
 ns={'asyncio':asyncio,'json':json,'hashlib':hashlib,'time':time,'re':re,'current_message_event':current,'native_memories':mem.native_memories,'SHARED_MEMORY_INSTRUCTION':mem.INSTRUCTION,**{k:getattr(policy,k) for k in ('quality_issue','confirmed_send','profile_context','legacy_summary','identity_answer','sender_binding','sender_identity_conflict','message_segments','mention_identity_question','mentioned_identity_answer','person_portrait','redact','remove_redundant_private_ack')}}
 exec(compile(ast.Module(body=[cls],type_ignores=[]),'live-hooks','exec'),ns)
+ns['read_attitude'] = mem.read_attitude
 class Event:
  def __init__(self,uid='100',group='9'):
   self.uid=uid;self.group=group;self.message_str='我们怎么认识的';self.extras={'jiangsheng_turn':'jiangsheng:123','jiangsheng_llm_started':True};self.message_obj=types.SimpleNamespace(raw_message={'message':[]})
@@ -69,6 +70,17 @@ class Hooks(unittest.IsolatedAsyncioTestCase):
   await self.obj.imported_facts(event,req)
   self.assertIn('海边认识',req.system_prompt);self.assertIn('看星星',req.system_prompt);self.assertNotIn('只有别人的经历',req.system_prompt)
   self.assertTrue(event.get_extra('jiangsheng_shared_memory'))
+ async def test_latest_attitude_is_shared_with_group_and_private_requests(self):
+  for turn in ['a','b']:
+   self.obj.person_memory.record('100',turn,'private','human','谢谢你陪我')
+   self.obj.person_memory.record('100',turn,'private','bot','和你聊天挺愉快')
+  job=self.obj.person_memory.attitude_job('100')
+  self.obj.person_memory.save_attitude(job,{'affection':60,'trust':60,'familiarity':60,
+    'attitude':'喜欢和你聊','reason':'双方交流愉快','evidenceIds':[r['id'] for r in job['exchanges']]})
+  for group in ['','9']:
+   req=types.SimpleNamespace(system_prompt='')
+   await self.obj.imported_facts(Event(group=group),req)
+   self.assertIn('喜欢和你聊',req.system_prompt)
  async def test_only_confirmed_qq_delivery_is_archived_as_bot_speech(self):
   for ok in (False,True):
    async def call(action,**params):return {'retcode':0,'status':'ok','data':{'message_id':7}} if ok else {'retcode':1,'status':'failed'}

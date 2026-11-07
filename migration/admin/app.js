@@ -52,17 +52,29 @@ function renderProfile(data) {
   paragraph(fields, p.relationship?.description || '关系资料暂未读取成功。');
   paragraph(fields, p.relationship?.note || '先核对资料，不凭空补全关系。', 'muted');
   const attitude = p.relationship?.attitude || {};
+  const currentAttitude = attitude.basis === 'contextual_estimate';
   section(fields, '好感度与江生对 TA 的态度');
   const score = value => Number.isFinite(value) ? `${value}/100` : '未记录';
   const attitudeRows = [
-    ['历史关系阶段', attitude.stage || '未记录'],
+    [currentAttitude ? '当前交流阶段（估计）' : '历史关系阶段', attitude.stage || '未记录'],
     ['好感度', score(attitude.affection)],
     ['熟悉度', score(attitude.familiarity)],
     ['信任度', score(attitude.trust)],
     ['关系边界', attitude.boundary || '未记录'],
   ];
   for (const [label, value] of attitudeRows) paragraph(fields, `${label}：${value}`);
-  paragraph(fields, '这些数值和阶段来自旧系统的历史估算，不代表实时情绪或已确认关系；江生对这个人的实际态度，请结合下方真实来往片段判断。', 'muted');
+  if (currentAttitude) {
+    paragraph(fields, '江生对 TA 的态度：' + attitude.attitude);
+    paragraph(fields, '本次评估依据：' + attitude.reason);
+    paragraph(fields, `更新于 ${formatTime(attitude.updatedAt)} · 依据 ${attitude.evidenceIds?.length || 0} 条双方互动记录。数值是对话评估，不是情感测量或关系认证。`, 'muted');
+    const changes = attitude.history || [];
+    for (const row of changes.slice(-5).reverse()) {
+      const signed = value => value > 0 ? '+' + value : String(value);
+      paragraph(fields, `${formatTime(row.at)}：好感 ${signed(row.changes?.affection || 0)}，信任 ${signed(row.changes?.trust || 0)}，熟悉 ${signed(row.changes?.familiarity || 0)} · ${row.reason}`, 'muted');
+    }
+  } else {
+    paragraph(fields, '当前显示旧系统历史估算；有足够的新双向互动后会自动评估并记录变化，不按消息条数直接加分。', 'muted');
+  }
   const saved = native.facts || [];
   section(fields, '后来记住的事');
   for (const fact of saved) {
@@ -91,7 +103,7 @@ function renderProfile(data) {
   const diagnostics = el('details', '', 'memory-details');
   diagnostics.append(el('summary', '历史提取与旧评分说明'));
   paragraph(diagnostics, '旧熟悉度、好感度、信任感由关键词和消息数计算，次数曾封顶100；单次情绪也会改变旧阶段。它们不再作为当前关系或共同经历展示。', 'muted');
-  if (attitude.updatedAt) paragraph(diagnostics, '旧评分更新时间：' + formatTime(attitude.updatedAt), 'muted');
+  if (!currentAttitude && attitude.updatedAt) paragraph(diagnostics, '旧评分更新时间：' + formatTime(attitude.updatedAt), 'muted');
   if (p.review?.rejected?.length) paragraph(diagnostics, '已从可用资料中排除的疑似问句碎片：' + p.review.rejected.join('、'), 'muted');
   relation.append(diagnostics);
   $('profile-card').classList.remove('hidden');

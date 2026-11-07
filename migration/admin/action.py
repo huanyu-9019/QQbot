@@ -652,6 +652,13 @@ def profile_read(qq: Any) -> dict[str, Any]:
     portrait = policy.person_portrait(profile, relationship)
     history_path = Path('/opt/jiangsheng-astrbot/runtime/data/jiangsheng-person-memory.sqlite3')
     try:
+        current_attitude = support.read_attitude(history_path, qq)
+        if current_attitude:
+            portrait['relationship']['attitude'] = current_attitude
+    except (sqlite3.Error, ValueError, OSError):
+        # Keep historical data explicitly labelled when the current estimate fails.
+        pass
+    try:
         portrait['history'] = support.interaction_timeline(history_path, qq)
         portrait['history']['status'] = 'available'
     except (sqlite3.Error, ValueError, OSError):
