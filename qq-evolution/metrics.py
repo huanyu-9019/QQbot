@@ -69,7 +69,7 @@ def aggregate(events, minimum_pairs=3):
                         and delivered[0].get('text') == delivered[1].get('text'))
         if len(delivered) > 1 and not paired_voice:
             multi_message_turns += 1
-        if incoming.get("mentionedOther") is True and delivered:
+        if incoming.get("mentionedOther") is True and not incoming.get('directedToBot') and delivered:
             foreign_mention_replies += 1
         if any(re.search(r"<img\b|<a\b|<script\b", str(row.get("text", "")), re.I) for row in delivered):
             html_leaks += 1
@@ -87,6 +87,7 @@ def aggregate(events, minimum_pairs=3):
         "unexpectedEnglishReplies": issues.count('unexpected_english'),
         "blockedQualityReplies": blocked,
         "blockedIdentityReplies": blocked_identity,
+        "mentionResolutionFailures": sum(row.get('direction')=='quality' and row.get('outcome')=='mention_target_unresolved' for row in events),
         "mediaFailures": sum(row.get('direction') == 'quality' and row.get('outcome') in {'stt_failed', 'tts_failed', 'vision_failed'} for row in events),
         "pairs": len(pairs),
         "silences": silences,
