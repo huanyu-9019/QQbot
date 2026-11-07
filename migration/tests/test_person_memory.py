@@ -5,6 +5,23 @@ PLUGIN=Path(__file__).parents[1]/'plugin'
 pkg=types.ModuleType('_js_memory_test');pkg.__path__=[str(PLUGIN)];sys.modules[pkg.__name__]=pkg
 spec=importlib.util.spec_from_file_location('_js_memory_test.person_memory',PLUGIN/'person_memory.py');mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
 class SharedMemoryTests(unittest.TestCase):
+ def test_timeline_is_account_bound_real_exchanges_not_inferred_milestones(self):
+  self.record('100','first','private','我们在这里第一次聊天',at=1)
+  self.record('100','first','private','很高兴认识你','bot',at=2)
+  self.record('200','other','private','别人的经历',at=3)
+  self.record('100','summary','private','无原话的旧摘要','summary',at=4)
+  for i in range(20): self.record('100',str(i),'group:9','后来聊的'+str(i),at=i+5)
+  before=self.path.read_bytes()
+  result=self.m.timeline('100')
+  self.assertEqual(result['humanTurns'],21)
+  self.assertEqual(result['firstAt'],1)
+  self.assertEqual(result['lastAt'],24)
+  self.assertEqual(result['channels'],['group','private'])
+  self.assertTrue(any(x['speaker']=='bot' for x in result['excerpts']))
+  text=json.dumps(result,ensure_ascii=False)
+  self.assertIn('第一次聊天',text);self.assertNotIn('别人的经历',text);self.assertNotIn('无原话',text)
+  self.assertEqual(self.path.read_bytes(),before)
+  self.assertEqual(self.m.timeline('300')['humanTurns'],0)
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.path=Path(self.tmp.name)/'memory.sqlite3';self.m=mod.PersonMemory(self.path)
  def record(self,uid,turn,channel,text,direction='human',at=1):return self.m.record(uid,turn,channel,direction,text,at=at)
@@ -62,14 +79,15 @@ class SharedMemoryTests(unittest.TestCase):
   owner=hashlib.sha256(enc(['inst','bot','role','subject-a','private']).encode()).hexdigest()
   with closing(sqlite3.connect(p)) as db,db:
    db.execute('CREATE TABLE identity_bindings(installation_id TEXT,bot_id TEXT,native_account_id TEXT,payload_json TEXT)')
-   db.execute('CREATE TABLE memory_atoms(atom_id TEXT,owner_key TEXT,state TEXT,record_json TEXT,updated_at TEXT)')
+   db.execute("CREATE TABLE memory_atoms(atom_id TEXT,owner_key TEXT,state TEXT,record_json TEXT,updated_at TEXT,subject TEXT DEFAULT 'self')")
    db.execute('CREATE TABLE relationship_memories(state TEXT,owner_json TEXT,subject_json TEXT,record_json TEXT,updated_at TEXT)')
    db.execute('INSERT INTO identity_bindings VALUES (?,?,?,?)',('inst','bot','100',enc({'subject':{'kind':'human','subject_id':'subject-a'}})))
    for key,state,word in [(owner,'active','同一人的经历'),(owner,'invalidated','已撤回内容'),('wrong','active','别人的经历')]:
-    db.execute('INSERT INTO memory_atoms VALUES (?,?,?,?,?)',(word,key,state,enc({'proposal':{'representation':word}}),'2026-11-08'))
+    db.execute('INSERT INTO memory_atoms(atom_id,owner_key,state,record_json,updated_at) VALUES (?,?,?,?,?)',(word,key,state,enc({'proposal':{'representation':word}}),'2026-11-08'))
+   db.execute("INSERT INTO memory_atoms VALUES (?,?,?,?,?,?)",('third',owner,'active',enc({'proposal':{'representation':'第三方资料'}}),'2026-11-08','someone_else'))
    db.execute('INSERT INTO relationship_memories VALUES (?,?,?,?,?)',('adopted',enc({'installation_id':'inst','bot_id':'bot','persona_id':'role'}),enc({'subject_id':'subject-a'}),enc({'interpretation':'我们的关系理解'}),'2026-11-08'))
   text=json.dumps(mod.native_memories(p,'100',installation='inst',bot='bot',role='role'),ensure_ascii=False)
   self.assertIn('同一人的经历',text);self.assertIn('我们的关系理解',text)
-  self.assertNotIn('撤回',text);self.assertNotIn('别人',text)
+  self.assertNotIn('撤回',text);self.assertNotIn('别人',text);self.assertNotIn('第三方资料',text)
   self.assertEqual(mod.native_memories(p,'200',installation='inst',bot='bot',role='role'),[])
 if __name__=='__main__':unittest.main()

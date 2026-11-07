@@ -54,23 +54,74 @@ def redact(value):
     return text
 
 
+def person_portrait(profile, relationship=None):
+    """A conservative shared read model, never a new source of invented facts.
+
+    Legacy extraction has no per-item evidence. Keep its usable clues, but do
+    not promote them to confirmed relationships or treat heuristic scores as
+    memories. Originals remain untouched for audit and later corrections.
+    """
+    profile = profile if isinstance(profile, dict) else {}
+    rejected = []
+    def clean(values, *, split=False):
+        seen, result = set(), []
+        for value in values if isinstance(values, list) else []:
+            if not isinstance(value, str) or _UNEQUAL.search(value):
+                continue
+            for text in re.split('[、；;\n]', value) if split else [value]:
+                text = redact(text).strip().strip('。，,；; ').strip()[:180]
+                key = re.sub(r'\s+', '', text).casefold()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                if re.fullmatch(r'(?:我|你|他|她|这|那)(?:吗|呢|啊|呀|么)?[?？]?|[?？…]+', text):
+                    rejected.append(text)
+                    continue
+                result.append(text)
+        return result[:24]
+    preferred = clean([profile.get('preferredName')])
+    group_names = profile.get('groupNicknames', {})
+    aliases = clean([profile.get('privateNickname')] + (list(group_names.values()) if isinstance(group_names, dict) else []))
+    aliases = [x for x in aliases if x not in preferred]
+    labels = clean(profile.get('relationships', []))
+    habits, boundaries, routine = [], [], []
+    for item in clean(profile.get('chatHabits', []), split=True):
+        if re.search('不喜欢|不希望|不要|别再|不接受|讨厌', item):
+            boundaries.append(item)
+        elif re.search('上班|下班|上课|作息|起床|睡觉时间', item):
+            routine.append(item)
+        else:
+            habits.append(item)
+    return {'name': preferred[0] if preferred else '', 'aliases': aliases,
+            'relationship': {'labels': labels, 'basis': 'legacy_unverified',
+                'description': ('迁入资料记有“' + '、'.join(labels) + '”的关系。') if labels else '暂没有可核实的明确关系记录。',
+                'note': '旧资料缺少逐条原话依据，不能当作新确认；也不能用旧分数推翻已有来往。当前明确更正及有来源的新记忆优先。'},
+            'habits': habits, 'boundaries': boundaries, 'routine': routine,
+            'preferences': clean(profile.get('preferences', []), split=True),
+            'basis': 'legacy_unverified', 'review': {'rejected': rejected},
+            'legacyDiagnostics': relationship if isinstance(relationship, dict) else {}}
+
+
 def profile_context(profile, *, group_id=None):
-    """Import only factual profile fields, with private material kept private."""
+    """Use the same conservative profile as the admin portrait."""
     result = []
     def add(label, value):
         if isinstance(value, str) and value.strip() and not _UNEQUAL.search(value):
             result.append(label + ': ' + redact(value.strip())[:160])
-    add('明确自称', profile.get('preferredName'))
+    portrait = person_portrait(profile)
+    add('迁入称呼', portrait['name'])
     if group_id:
         nicknames = profile.get('groupNicknames', {})
         if isinstance(nicknames, dict):
             add('本群昵称', nicknames.get(str(group_id)))
     else:
         add('私聊昵称', profile.get('privateNickname'))
-        for field, label in [('relationships', '明确关系'), ('chatHabits', '交流偏好'), ('preferences', '兴趣')]:
-            values = profile.get(field, [])
-            for value in values[:8] if isinstance(values, list) else []:
+        for field, label in [('habits', '迁入交流习惯'), ('boundaries', '迁入边界'), ('routine', '迁入作息'), ('preferences', '迁入偏好线索')]:
+            for value in portrait[field][:8]:
                 add(label, value)
+        if portrait['relationship']['labels']:
+            add('迁入关系记录（非新确认）', '、'.join(portrait['relationship']['labels']))
+        add('资料依据', '迁入提取可能有误；不能用消息数推断亲密关系，当前更正和有来源的新记忆优先')
     return '\n'.join(result)[:1800]
 
 
@@ -144,7 +195,7 @@ def sender_binding(root, account, display_name):
         own.add(display)
     return {'account': str(account), 'name': preferred or display,
             'aliases': sorted(own), 'foreign_aliases': sorted(others - own),
-            'relationships': relationships}
+            'relationships': relationships, 'relationships_basis': 'legacy_unverified'}
 
 
 def sender_identity_conflict(text, binding):

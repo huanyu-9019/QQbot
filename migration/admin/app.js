@@ -39,21 +39,56 @@ function selectView(name) {
   if (name === 'updates') loadUpdates();
 }
 function renderProfile(data) {
-  const card = $('profile-card');
-  const fields = $('profile-fields');
-  const relation = $('relationship-fields');
+  const fields = $('profile-fields'), relation = $('relationship-fields');
   fields.replaceChildren(); relation.replaceChildren();
-  const labels = { preferredName: '希望被称为', privateNickname: '私聊称呼', groupNicknames: '群内称呼', relationships: '已确认关系', chatHabits: '聊天习惯', preferences: '兴趣和偏好' };
-  const relationLabels = { stage: '关系阶段', familiarity: '熟悉度', trust: '信任感', affection: '好感度', boundary: '边界', lastMood: '最近情绪', milestones: '重要经历', turns: '互动次数', updatedAt: '档案更新时间' };
-  const append = (root, label, value) => { const row = document.createElement('div'); row.className = 'info-row'; const name = document.createElement('span'); name.textContent = label; const content = document.createElement('strong'); content.textContent = Array.isArray(value) ? value.join('、') || '暂无' : (value && typeof value === 'object' ? Object.entries(value).map(([k, v]) => `${k}: ${v}`).join('；') : (value ?? '暂无')); row.append(name, content); root.append(row); };
-  Object.entries(data.profile || {}).forEach(([key, value]) => append(fields, labels[key] || key, value));
-  Object.entries(data.relationship || {}).forEach(([key, value]) => append(relation, relationLabels[key] || key, key === 'updatedAt' ? formatTime(value) : value));
-  if (!fields.childElementCount) fields.textContent = '暂无已记录资料。';
-  if (!relation.childElementCount) relation.textContent = '暂无关系记录。';
-  card.classList.remove('hidden');
+  const p = data.portrait || {}, history = p.history || {}, native = data.native || {};
+  const el = (tag, text, cls) => { const n = document.createElement(tag); n.textContent = text; if (cls) n.className = cls; return n; };
+  const paragraph = (root, text, cls = '') => root.append(el('p', text, cls));
+  const section = (root, title) => root.append(el('h4', title));
+  const list = (root, values) => { const ul = el('ul', '', 'memory-list'); for (const v of values || []) ul.append(el('li', v)); root.append(ul); };
+  paragraph(fields, p.name || '称呼还没有可靠记录', 'person-name');
+  if (p.aliases?.length) paragraph(fields, '也用过这些称呼：' + p.aliases.join('、'), 'muted');
+  section(fields, '我们之间');
+  paragraph(fields, p.relationship?.description || '关系资料暂未读取成功。');
+  paragraph(fields, p.relationship?.note || '先核对资料，不凭空补全关系。', 'muted');
+  const saved = native.facts || [];
+  section(fields, '后来记住的事');
+  for (const fact of saved) {
+    const item = el('article', '', 'memory-entry');
+    paragraph(item, fact.detail || fact.value || '（内容为空）');
+    paragraph(item, `${fact.category || '记忆'} · 保存于 ${formatTime(fact.updatedAt)}${fact.sourceCount != null ? ' · 依据 ' + fact.sourceCount + ' 条' : ''}`, 'muted');
+    fields.append(item);
+  }
+  if (!saved.length) paragraph(fields, native.status === 'available' ? '还没有新系统已采纳的结构化记忆。下面的旧资料与聊天片段不会冒充新的学习成果。' : '新系统记忆暂时读取失败。', 'muted');
+  const clues = el('details', '', 'memory-details');
+  clues.append(el('summary', '迁入的个人线索 · 尚缺逐条原话依据'));
+  for (const [key, title] of [['habits','聊天习惯'], ['preferences','兴趣和偏好线索'], ['routine','生活与作息'], ['boundaries','明确边界线索']]) {
+    if (p[key]?.length) { section(clues, title); list(clues, p[key]); }
+  }
+  paragraph(clues, '保留旧资料供核对；后续明确更正和有来源的新记忆优先。群聊与私聊共用同一账号的经历，不按昵称合并不同人。', 'muted');
+  fields.append(clues);
+  if (history.status === 'available') {
+    paragraph(relation, history.humanTurns ? `记录中最早的来往：${formatTime(history.firstAt)}；最近来往：${formatTime(history.lastAt)}。累计收录对方 ${history.humanTurns} 条消息，来自 ${(history.channels || []).map(x => x === 'private' ? '私聊' : '群聊').join('、')}。` : '尚未收录这位用户的真实对话。', 'muted');
+    paragraph(relation, '以下选取最早与最近的对话片段，保留双方归属。它们是发生过的发言，玩笑、自述和旧回答仍需结合上下文判断，不能直接当作已确认事实。', 'muted');
+    for (const item of history.excerpts || []) {
+      const row = el('article', '', 'memory-entry');
+      paragraph(row, `${item.speaker === 'human' ? (p.name || '对方') : '江生当时的回答'} · ${item.channel === 'private' ? '私聊' : '群聊'} · ${formatTime(item.at)}`, 'muted');
+      row.append(el('blockquote', item.text)); relation.append(row);
+    }
+  } else paragraph(relation, '真实对话记录暂未读取成功，不能据此认定没有来往。', 'muted');
+  const diagnostics = el('details', '', 'memory-details');
+  diagnostics.append(el('summary', '历史提取与旧评分说明'));
+  paragraph(diagnostics, '旧熟悉度、好感度、信任感由关键词和消息数计算，次数曾封顶100；单次情绪也会改变旧阶段。它们不再作为当前关系或共同经历展示。', 'muted');
+  if (p.legacyDiagnostics?.updatedAt) paragraph(diagnostics, '旧评分更新时间：' + formatTime(p.legacyDiagnostics.updatedAt), 'muted');
+  if (p.review?.rejected?.length) paragraph(diagnostics, '已从可用资料中排除的疑似问句碎片：' + p.review.rejected.join('、'), 'muted');
+  relation.append(diagnostics);
+  $('profile-card').classList.remove('hidden');
 }
 function formatTime(value) {
-  return value ? new Date(Number(value) * 1000).toLocaleString() : '暂无记录';
+  if (value === undefined || value === null || value === '') return '暂无记录';
+  const n = Number(value);
+  const d = Number.isFinite(n) ? new Date(Math.abs(n) < 1e11 ? n * 1000 : n) : new Date(value);
+  return Number.isNaN(d.getTime()) ? '时间未识别' : d.toLocaleString();
 }
 function renderEvolution(data) {
   const state = $('evolution-state');
@@ -97,7 +132,7 @@ function renderEvolution(data) {
   const statusNames = {completed:'评估完成',evaluating:'评估中',failed:'评估失败',unknown:'尚无新状态'};
   const metrics = $('evolution-learning-metrics'); metrics.replaceChildren();
   if (qq.runtime === 'astrbot') { const p = document.createElement('p'); p.textContent = 'AstrBot ' + (qq.astrbot ? '运行中' : '异常') + ' · QQ ' + (qq.qqConnected ? '已连接' : '断开') + ' · 陪伴插件 ' + (qq.companionReady ? '已就绪' : '未就绪') + ' · 上次入站 ' + formatTime(qq.lastIncoming) + ' · 超时未回复 ' + (qq.unanswered || 0) + ' 条'; metrics.append(p); }
-  for (const [name,value] of [['累计学习轮数',codex.iterationCount ?? '—'],['学习频率','每 15 分钟'],['日志检查频率','每 5 分钟'],['下次评估最早时间',formatTime(codex.nextIteration)],['本轮状态',statusNames[codex.learningStatus] || codex.learningStatus],['评估对话事件',codex.learningEvents ?? '—'],['评估开始',formatTime(codex.learningStarted)],['评估结束',formatTime(codex.learningFinished)]]) {
+  for (const [name,value] of [['累计学习轮数',codex.iterationCount ?? '—'],['学习频率','每 30 分钟'],['日志检查频率','每 5 分钟'],['下次评估最早时间',formatTime(codex.nextIteration)],['本轮状态',statusNames[codex.learningStatus] || codex.learningStatus],['评估对话事件',codex.learningEvents ?? '—'],['评估开始',formatTime(codex.learningStarted)],['评估结束',formatTime(codex.learningFinished)]]) {
     const item=document.createElement('div');item.className='metric';
     const title=document.createElement('span');title.textContent=name;
     const content=document.createElement('strong');content.textContent=value;item.append(title,content);metrics.append(item);

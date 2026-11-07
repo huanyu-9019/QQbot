@@ -7,7 +7,16 @@
   <title>江生管理台</title>
   <link rel="stylesheet" href="/style.css">
   <script defer src="/app.js"></script>
-</head>
+<style>
+#profile-card .person-name { font-size:1.65rem; font-weight:650; margin:.5rem 0; }
+#profile-card h4 { margin:1.6rem 0 .6rem; color:var(--accent,#6dd6bd); }
+#profile-card p, #profile-card li { line-height:1.85; overflow-wrap:anywhere; }
+#profile-card .memory-entry { border-left:2px solid #4b9e8b; padding:.2rem 1rem; margin:1rem 0; background:#ffffff03; }
+#profile-card blockquote { margin:.25rem 0 .6rem; white-space:pre-wrap; line-height:1.8; }
+#profile-card .memory-details { border-top:1px solid #ffffff14; padding:1rem 0; margin-top:1.2rem; }
+#profile-card summary { cursor:pointer; color:#a7b9bd; }
+#profile-card .memory-list { padding-left:1.4rem; }
+</style></head>
 <body>
   <main class="shell">
     <header class="topbar">
@@ -171,9 +180,9 @@
       </section>
 
       <section id="view-profile" class="view hidden">
-        <div class="section-heading"><div><p class="eyebrow">QQ 用户</p><h2>角色档案</h2></div></div>
+        <div class="section-heading"><div><p class="eyebrow">QQ 用户</p><h2>人物记忆</h2></div></div>
         <div class="card">
-          <p class="muted">输入 QQ 号查看已记录的角色资料。此页面只读，不能修改或删除档案。</p>
+          <p class="muted">输入 QQ 号，查看江生与这个人的称呼、关系线索和真实来往。此页面只读。</p>
           <form id="profile-form" class="form-row">
             <label for="profile-qq">QQ 号</label>
             <input id="profile-qq" inputmode="numeric" pattern="[0-9]{5,12}" maxlength="12" required>
@@ -182,9 +191,9 @@
           <p id="profile-result" class="result" role="status"></p>
         </div>
         <div id="profile-card" class="card hidden">
-          <div class="section-heading compact"><h3>资料摘要</h3><span class="pill ok">只读</span></div>
+          <div class="section-heading compact"><h3>我记得的这个人</h3><span class="pill ok">只读</span></div>
           <div id="profile-fields"></div>
-          <h3>关系状态</h3><div id="relationship-fields"></div>
+          <h3>来往记录与依据</h3><div id="relationship-fields"></div>
         </div>
       </section>
 

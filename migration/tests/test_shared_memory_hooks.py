@@ -25,6 +25,15 @@ class Hooks(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
   self.obj=ns['JiangshengMigration']();self.obj.root=Path(self.tmp.name);self.obj.person_memory=mem.PersonMemory(self.obj.root/'m.db');self.obj.shared_memory_error=None;self.obj.patched=[];self.obj.write=lambda *a,**k:None;self.obj.voice_requested=lambda e:False
+ async def test_private_profile_and_summary_are_not_injected_twice(self):
+  folder=self.obj.root/'legacy/qq-user-memory';folder.mkdir(parents=True)
+  key=hashlib.sha256(b'user:100').hexdigest()
+  (folder/(key+'.json')).write_text(json.dumps({'profile':{'preferences':['独有偏好','我吗']},'summary':'独有旧摘要'}),encoding='utf-8')
+  event=Event(group='');req=types.SimpleNamespace(system_prompt='')
+  await self.obj.imported_facts(event,req)
+  self.assertEqual(req.system_prompt.count('独有偏好'),1)
+  self.assertEqual(req.system_prompt.count('独有旧摘要'),1)
+  self.assertNotIn('迁入偏好线索: 我吗',req.system_prompt)
  async def test_group_request_receives_same_account_private_experience(self):
   self.obj.person_memory.record('100','old','private','human','我们在海边认识，还说好一起看星星',at=1)
   self.obj.person_memory.record('200','wrong','private','human','只有别人的经历',at=1)
