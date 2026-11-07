@@ -7,10 +7,10 @@ from importlib import import_module
 mem=import_module('_js_hook_test.person_memory');policy=import_module('_js_hook_test.policy')
 tree=ast.parse((PLUGIN/'main.py').read_text(encoding='utf-8'))
 cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='JiangshengMigration')
-cls.bases=[];cls.decorator_list=[];cls.body=[n for n in cls.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name in ('patch_client','remember','shared_person_context','imported_facts','generated')]
+cls.bases=[];cls.decorator_list=[];cls.body=[n for n in cls.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name in ('patch_client','remember','shared_person_context','imported_facts','generated','mentioned_people')]
 for n in cls.body:n.decorator_list=[]
 current=contextvars.ContextVar('current',default=None)
-ns={'asyncio':asyncio,'json':json,'hashlib':hashlib,'time':time,'re':re,'current_message_event':current,'native_memories':mem.native_memories,'SHARED_MEMORY_INSTRUCTION':mem.INSTRUCTION,**{k:getattr(policy,k) for k in ('quality_issue','confirmed_send','profile_context','legacy_summary','identity_answer','sender_binding','sender_identity_conflict')}}
+ns={'asyncio':asyncio,'json':json,'hashlib':hashlib,'time':time,'re':re,'current_message_event':current,'native_memories':mem.native_memories,'SHARED_MEMORY_INSTRUCTION':mem.INSTRUCTION,**{k:getattr(policy,k) for k in ('quality_issue','confirmed_send','profile_context','legacy_summary','identity_answer','sender_binding','sender_identity_conflict','message_segments','mention_identity_question','mentioned_identity_answer','person_portrait','redact')}}
 exec(compile(ast.Module(body=[cls],type_ignores=[]),'live-hooks','exec'),ns)
 class Event:
  def __init__(self,uid='100',group='9'):
@@ -25,6 +25,27 @@ class Hooks(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
   self.obj=ns['JiangshengMigration']();self.obj.root=Path(self.tmp.name);self.obj.person_memory=mem.PersonMemory(self.obj.root/'m.db');self.obj.shared_memory_error=None;self.obj.patched=[];self.obj.write=lambda *a,**k:None;self.obj.voice_requested=lambda e:False
+ async def test_mention_without_legacy_profile_resolves_live_group_member_and_grounded_reply(self):
+  event=Event();event.message_str='江生， @梦l 是谁'
+  event.message_obj.raw_message={'message':[{'type':'text','data':{'text':'江生， '}},{'type':'at','data':{'qq':'200'}},{'type':'text','data':{'text':'是谁'}}]}
+  calls=[]
+  async def call(action,**kw):
+   calls.append((action,kw));return {'user_id':200,'group_id':9,'card':'梦l','nickname':'昵称'}
+  event.bot=types.SimpleNamespace(call_action=call);req=types.SimpleNamespace(system_prompt='')
+  await self.obj.imported_facts(event,req)
+  self.assertIn('"displayName": "梦l"',req.system_prompt)
+  self.assertEqual(calls[0][0],'get_group_member_info')
+  response=types.SimpleNamespace(completion_text='我没法确认你说的是哪位。')
+  await self.obj.generated(event,response)
+  self.assertEqual(response.completion_text,'你@的是梦l。更具体的身份，我还没有可靠记录。')
+ async def test_api_failure_retains_typed_target_and_mismatched_member_is_rejected(self):
+  event=Event();event.message_str='@梦l 是谁'
+  event.message_obj=types.SimpleNamespace(raw_message=None,message=[types.SimpleNamespace(type='At',qq=200,name='梦l'),types.SimpleNamespace(type='Plain',text='是谁')])
+  async def wrong(action,**kw):return {'user_id':999,'card':'别人的昵称'}
+  event.bot=types.SimpleNamespace(call_action=wrong);req=types.SimpleNamespace(system_prompt='')
+  await self.obj.imported_facts(event,req)
+  self.assertIn('"displayName": "梦l"',req.system_prompt)
+  self.assertNotIn('别人的昵称',req.system_prompt)
  async def test_private_profile_and_summary_are_not_injected_twice(self):
   folder=self.obj.root/'legacy/qq-user-memory';folder.mkdir(parents=True)
   key=hashlib.sha256(b'user:100').hexdigest()

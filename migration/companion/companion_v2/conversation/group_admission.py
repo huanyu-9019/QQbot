@@ -153,6 +153,10 @@ class GroupReplyAdmission:
         continuation = continuation if continuation is not None else self.continuation_status(
             context, instruction, at, settings=settings, event_id=event_id)
         if mentions_others:
+            # A third-person identity question uses the @ as its subject. It is
+            # not a direct question addressed to that member ("@X 你是谁").
+            if wakeup["group_wakeup_enabled"] and re.fullmatch(r'\s*(?:\[提及账号 \d+\]\s*)+(?:(?:他|她|这个人|这位)?是谁|(?:他|她)?叫(?:什么(?:名字)?|啥)|你(?:还)?(?:认识|记得)(?:他|她)(?:吗|不))[\s?？。!！]*', text):
+                return "question"
             return "behavior" if self._behavior_candidate(context, compact, wakeup, participation) else ""
         if not continuation["limit_reached"] and continuation["candidate_reason"]:
             return continuation["candidate_reason"]

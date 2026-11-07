@@ -40,6 +40,8 @@ def sanitize_record(record):
         row["mentioned"] = record["mentioned"]
     if isinstance(record.get("mentionedOther"), bool):
         row["mentionedOther"] = record["mentionedOther"]
+    if isinstance(record.get('directedToBot'), bool):
+        row['directedToBot'] = record['directedToBot']
     if record.get("media") in {"text", "image", "sticker", "voice"}:
         row["media"] = record["media"]
     try:
@@ -65,7 +67,7 @@ def sanitize_record(record):
     }:
         row["outcome"] = record["outcome"]
     if record['direction'] == 'quality':
-        if record.get('outcome') not in {'analysis_leak', 'unexpected_english', 'stt_failed', 'tts_failed', 'vision_failed', 'sender_identity_mismatch'}: return None
+        if record.get('outcome') not in {'analysis_leak', 'unexpected_english', 'stt_failed', 'tts_failed', 'vision_failed', 'sender_identity_mismatch', 'mention_target_unresolved'}: return None
         row['outcome'] = record['outcome']
         row['text'] = ''
     return row

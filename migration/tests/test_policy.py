@@ -15,7 +15,7 @@ class MigrationPolicyTest(unittest.TestCase):
 
     def test_other_person_mention_is_not_for_bot(self):
         msg = [{'type': 'at', 'data': {'qq': '2512930532'}},
-               {'type': 'text', 'data': {'text': '他叫什么名字'}}]
+               {'type': 'text', 'data': {'text': '你叫什么名字'}}]
         self.assertFalse(self.p.may_reply(msg, '3899701587', group=True))
         msg.insert(0, {'type': 'at', 'data': {'qq': '3899701587'}})
         self.assertTrue(self.p.may_reply(msg, '3899701587', group=True))

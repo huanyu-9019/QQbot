@@ -12,6 +12,60 @@ _ANALYSIS = re.compile(r'\b(?:initial assessment|now assessing|debugging artifac
 _RESPONSE_REASONING = re.compile(r'\b(?:the repeated use of .{1,100}? appears to be|further investigation is needed to ascertain|considering both options are unclear|the guidelines suggest active participation)\b', re.I | re.S)
 _REASONING_BOUNDARY = re.compile(r'</?(?:think|analysis|reasoning)(?:\s[^>]*)?>|<\|(?:analysis|start_header_id|end_header_id)\|>|(?m:^\s*(?:思考过程|内部分析|回复策略|analysis|reasoning)\s*[:：])', re.I)
 _UNEQUAL = re.compile(r'主人|奴隶|奴仆|所有者|支配者|服从|归.*所有|master|slave|owner', re.I)
+_MENTION_IDENTITY = r'(?:(?:他|她|这个人|这位)?是谁|(?:他|她)?叫(?:什么(?:名字)?|啥)|你(?:还)?(?:认识|记得)(?:他|她)(?:吗|不))'
+
+
+def message_segments(event):
+    """Read transport components; never infer an account from a typed @ string."""
+    obj = getattr(event, 'message_obj', None)
+    raw = getattr(obj, 'raw_message', None)
+    parts = raw.get('message') if isinstance(raw, dict) else None
+    typed = getattr(obj, 'message', None) or []
+    result = []
+    if isinstance(parts, list):
+        result = [dict(type=p.get('type'), data=dict(p.get('data', {}))) for p in parts[:128]
+                  if isinstance(p, dict) and isinstance(p.get('data', {}), dict)]
+    else:
+        for part in typed[:128]:
+            kind = getattr(part, 'type', type(part).__name__)
+            kind = getattr(kind, 'value', kind)
+            if kind == 'At':
+                result.append({'type':'at','data':{'qq':str(getattr(part,'qq','')),'name':str(getattr(part,'name','') or '')}})
+            elif kind == 'Plain':
+                result.append({'type':'text','data':{'text':str(getattr(part,'text',''))}})
+    names = {str(getattr(p,'qq','')):str(getattr(p,'name','') or '') for p in typed if getattr(p,'qq',None) is not None}
+    for part in result:
+        if part['type'] == 'at':
+            part['data']['qq'] = str(part['data'].get('qq',''))
+            if names.get(part['data']['qq']):
+                part['data']['name'] = names[part['data']['qq']][:80]
+    return result
+
+
+def mention_identity_question(segments, self_id):
+    targets = {str(p.get('data',{}).get('qq','')) for p in segments if p.get('type')=='at'} - {str(self_id), 'all', ''}
+    if not targets:
+        return False
+    text = ''.join(str(p.get('data',{}).get('text','')) for p in segments if p.get('type')=='text').strip()
+    text = re.sub(r'^江生[\s，,：:]*', '', text)
+    return bool(re.fullmatch(_MENTION_IDENTITY+r'[\s?？。!！]*', text))
+
+
+def mentioned_identity_answer(segments, self_id, people):
+    if not mention_identity_question(segments, self_id):
+        return None
+    targets = list(dict.fromkeys(str(p.get('data',{}).get('qq','')) for p in segments
+                                if p.get('type')=='at' and str(p.get('data',{}).get('qq','')) not in (str(self_id),'all','')))
+    if len(targets) != 1:
+        return None
+    person = next((p for p in people if p.get('account') == targets[0]), {})
+    display = redact(person.get('displayName') or person.get('preferredName')).strip()[:80]
+    preferred = redact(person.get('preferredName')).strip()[:80]
+    if not display:
+        return None
+    if preferred and preferred != display:
+        return '你@的是'+display+'，我这里记的称呼是'+preferred+'。'
+    return '你@的是'+display+'。更具体的身份，我还没有可靠记录。'
 
 
 def may_reply(segments, self_id, *, group):
@@ -21,6 +75,8 @@ def may_reply(segments, self_id, *, group):
     mentions = {str(p.get('data', {}).get('qq', '')) for p in segments
                 if isinstance(p, dict) and p.get('type') == 'at'}
     if not (mentions - {str(self_id)}) or str(self_id) in mentions:
+        return True
+    if mention_identity_question(segments, self_id):
         return True
     prefix = ''
     for part in segments:
