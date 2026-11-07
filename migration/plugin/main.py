@@ -134,6 +134,9 @@ class JiangshengMigration(Star):
             if not self.voice_requested(event):
                 self.write('quality', event, outcome='unsolicited_voice', media='voice')
                 raise ValueError('voice requires a request in the current turn')
+            if str(text or '').strip() == '<QQ_SILENT>':
+                self.write('silent', event, outcome='model_silent')
+                raise ValueError('silence marker must not be synthesized')
             issue = quality_issue(text, event.message_str if event else '')
             if issue:
                 self.write('quality', event, outcome=issue, media='voice')
@@ -183,6 +186,9 @@ class JiangshengMigration(Star):
                     self.write('quality', event, scope=scope, outcome='unverified_voice_source', media='voice')
                     raise ValueError('voice requires a validated synthesis source')
                 text = '\n'.join(part for part in (text, source) if part)
+            if sending and text.strip() == '<QQ_SILENT>':
+                self.write('silent', event, scope=scope, outcome='model_silent')
+                raise ValueError('silence marker must not be delivered')
             if sending and quality_issue(text, event.message_str if event else ''):
                 self.write('quality', event, scope=scope, outcome=quality_issue(text))
                 raise ValueError('internal analysis blocked before QQ delivery')
