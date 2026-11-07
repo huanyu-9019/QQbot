@@ -148,6 +148,15 @@ class JiangshengMigration(Star):
             sending = action.startswith('send_') and ('msg' in action or 'forward' in action)
             event = current_message_event.get()
             scope = 'group:' + str(params['group_id']) if params.get('group_id') else 'private:' + str(params.get('user_id', 'unknown'))
+            if sending:
+                expected_scope = (('group:' + str(event.get_group_id())) if event.get_group_id()
+                                  else 'private:' + str(event.get_sender_id())) if event else None
+                if not event or not event.get_extra('jiangsheng_turn') or scope != expected_scope:
+                    self.write('quality', scope=scope, outcome='unattributed_send_blocked')
+                    raise ValueError('QQ delivery requires the current incoming turn and matching destination')
+                if not event.get_extra('jiangsheng_llm_started'):
+                    self.write('quality', event, scope=scope, outcome='unapproved_send_blocked')
+                    raise ValueError('QQ conversation delivery requires Companion turn participation')
             segments = params.get('message', [])
             text = '\n'.join(str(p.get('data', {}).get('text', '')) for p in segments if isinstance(p, dict) and p.get('type') == 'text') if isinstance(segments, list) else str(segments)
             voice = isinstance(segments, list) and any(p.get('type') == 'record' for p in segments if isinstance(p, dict))
