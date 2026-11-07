@@ -49,9 +49,11 @@ class AdminPortraitTests(unittest.TestCase):
             module.RELATIONSHIP_MEMORY = Path(tmp)/'relations';module.RELATIONSHIP_MEMORY.mkdir()
             name=hashlib.sha256(b'user:123456').hexdigest()+'.json'
             (module.USER_MEMORY/name).write_text(json.dumps({'profile':{'preferredName':'甲','preferences':['我吗','足球','足球'],'relationships':['情侣']}}))
+            (module.RELATIONSHIP_MEMORY/name).write_text(json.dumps({'stage':'熟悉的朋友','affection':72,'familiarity':88,'trust':64}))
             result = module.profile_read('123456')
             self.assertEqual(result['portrait']['preferences'], ['足球'])
             self.assertEqual(result['portrait']['relationship']['basis'], 'legacy_unverified')
+            self.assertEqual(result['portrait']['relationship']['attitude']['affection'], 72)
             server_spec=importlib.util.spec_from_file_location('admin_server',Path(__file__).parents[1]/'admin/server.py')
             server=importlib.util.module_from_spec(server_spec);server_spec.loader.exec_module(server)
             view=server.profile_view(result)

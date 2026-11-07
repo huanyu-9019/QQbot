@@ -8,6 +8,19 @@ spec.loader.exec_module(policy)
 
 
 class PortraitTests(unittest.TestCase):
+    def test_portrait_exposes_saved_attitude_scores_as_historical_estimates(self):
+        result = policy.person_portrait({}, {
+            'stage': '熟悉的朋友', 'affection': 72, 'familiarity': 88,
+            'trust': 64, 'boundary': '不喜欢被催', 'lastMood': '开心',
+            'updatedAt': 1760000000,
+        })
+        attitude = result['relationship']['attitude']
+        self.assertEqual(attitude['affection'], 72)
+        self.assertEqual(attitude['familiarity'], 88)
+        self.assertEqual(attitude['trust'], 64)
+        self.assertEqual(attitude['stage'], '熟悉的朋友')
+        self.assertEqual(attitude['basis'], 'legacy_estimate')
+
     def test_legacy_relationship_is_not_confirmed_or_overridden_by_old_score(self):
         result = policy.person_portrait({'preferredName': '甲', 'relationships': ['情侣']},
                                        {'stage': '保持距离', 'affection': 30, 'turns': 100})
