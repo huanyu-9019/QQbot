@@ -158,6 +158,14 @@ class JiangshengMigration(Star):
                     self.write('quality', event, scope=scope, outcome='unapproved_send_blocked')
                     raise ValueError('QQ conversation delivery requires Companion turn participation')
             segments = params.get('message', [])
+            if sending and ('forward' in action or (
+                isinstance(segments, list) and any(
+                    isinstance(p, dict) and p.get('type') == 'node' for p in segments))):
+                self.write('quality', event, scope=scope, outcome='unvalidated_forward_blocked')
+                raise ValueError('forwarded content requires separate delivery validation')
+            if sending and isinstance(segments, str) and re.search(r'\[CQ:record(?:,|\])', segments, re.I):
+                self.write('quality', event, scope=scope, outcome='unverified_voice_source', media='voice')
+                raise ValueError('voice must use structured segments for source and request validation')
             text = '\n'.join(str(p.get('data', {}).get('text', '')) for p in segments if isinstance(p, dict) and p.get('type') == 'text') if isinstance(segments, list) else str(segments)
             voice = isinstance(segments, list) and any(p.get('type') == 'record' for p in segments if isinstance(p, dict))
             if sending and voice:
