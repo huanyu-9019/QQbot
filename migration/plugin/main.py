@@ -131,7 +131,10 @@ class JiangshengMigration(Star):
                 raise ValueError('internal analysis blocked before speech synthesis')
             self.write('voice_source', event, text=text, media='voice')
             try:
-                return await original(text)
+                audio = await original(text)
+                if event:
+                    event.set_extra('jiangsheng_voice_source', text)
+                return audio
             except Exception:
                 self.write('quality', event, outcome='tts_failed', media='voice')
                 raise
@@ -148,8 +151,12 @@ class JiangshengMigration(Star):
             segments = params.get('message', [])
             text = '\n'.join(str(p.get('data', {}).get('text', '')) for p in segments if isinstance(p, dict) and p.get('type') == 'text') if isinstance(segments, list) else str(segments)
             voice = isinstance(segments, list) and any(p.get('type') == 'record' for p in segments if isinstance(p, dict))
-            if voice and event:
-                text = event.get_extra('jiangsheng_generated') or text
+            if sending and voice:
+                source = event.get_extra('jiangsheng_voice_source') if event else None
+                if not isinstance(source, str) or not source.strip():
+                    self.write('quality', event, scope=scope, outcome='unverified_voice_source', media='voice')
+                    raise ValueError('voice requires a validated synthesis source')
+                text = '\n'.join(part for part in (text, source) if part)
             if sending and quality_issue(text, event.message_str if event else ''):
                 self.write('quality', event, scope=scope, outcome=quality_issue(text))
                 raise ValueError('internal analysis blocked before QQ delivery')
