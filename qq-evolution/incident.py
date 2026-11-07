@@ -8,9 +8,27 @@ from status_report import remote_script,ROOT
 INCIDENT=ROOT/'incident.json'
 REPO=Path('/home/admin/qq-evolution/development')
 
+def vision_probe_status(router, now=None, max_age=900):
+    now = time.time() if now is None else float(now)
+    checked = []
+    fresh_success = False
+    for route in router.get('routes', []) if isinstance(router, dict) else []:
+        try:
+            at = float(route.get('visionCheckedAt', 0))
+        except (TypeError, ValueError):
+            continue
+        if at > 0:
+            checked.append(at)
+        if route.get('visionAvailable') is True and 0 <= now - at <= max_age:
+            fresh_success = True
+    return fresh_success, max(checked, default=0)
+
+
 def needs_repair(health):
     return (not all(health.get(k) is True for k in ('api','napcat','reply'))
             or health.get('vision') is False
+            or health.get('learningHealthy') is False
+            or health.get('sharedMemoryReady') is False
             or int(health.get('unanswered',0))>0)
 
 def validate_decision(value):
@@ -30,7 +48,7 @@ def repair_incident(health,decide,execute,probe):
         source='codex'
     except Exception:
         source='fixed_recovery'
-        action='none' if health.get('vision') is False and health.get('reply') is True else 'use_deepseek' if health.get('deepseek') and not health.get('primary') and not health.get('unanswered') else 'restart_bridge' if not health.get('napcat') or health.get('unanswered') else 'restart_api'
+        action='none' if health.get('reply') is True and (health.get('vision') is False or health.get('learningHealthy') is False or health.get('sharedMemoryReady') is False) else 'use_deepseek' if health.get('deepseek') and not health.get('primary') and not health.get('unanswered') else 'restart_bridge' if not health.get('napcat') or health.get('unanswered') else 'restart_api'
         decision={'action':action,'reason':'Codex unavailable; fixed continuity recovery','diff':''}
     execution_error=None
     try:execute(decision)
@@ -46,10 +64,7 @@ def probe_health():
         from runtime_support import runtime_probe_script
         runtime = remote_script(runtime_probe_script(), timeout=20)
         if runtime.get('runtime') == 'astrbot':
-            # Reuse the actual media probe below; the Hermes code-path guard is obsolete.
-            old_probe = _legacy_probe_health()
-            runtime['vision'] = old_probe.get('visionProbeRaw', runtime.get('vision', False))
-            runtime['visionProbeAt'] = old_probe.get('visionProbeAt', runtime.get('visionProbeAt'))
+            runtime['vision'], runtime['visionProbeAt'] = vision_probe_status(runtime.get('router'))
             return runtime
         return _legacy_probe_health()
     except Exception:

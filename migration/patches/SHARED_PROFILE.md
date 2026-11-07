@@ -1,0 +1,20 @@
+# Unified per-account memory policy (current)
+
+Supersedes the earlier private-audience-only shared-profile patch. On 2026-11-08 the operator explicitly requested that ALL users share their group/private experiences, relationship continuity and profile across channels. Channel is provenance, not a privacy partition. Do not restore the earlier private-to-group prohibition. Keep accounts separate using authenticated sender IDs, never nickname matching or another member's claimed identity.
+
+Production implementation:
+- `migration/plugin/person_memory.py`: durable `jiangsheng-person-memory.sqlite3`, idempotent authenticated per-account human/bot exchanges, source and channel labels, bounded recall with Chinese bigram full-text search, first private encounters and recent private/group context. Bot entries require confirmed QQ delivery from the audited transport hook. Historical recorder and audit receipts are backfilled; incomplete/unsaved history cannot be invented.
+- `migration/plugin/main.py`: intake persistence even when a group message is not answered, confirmed outgoing persistence, and both group/private request hooks receive this same account's shared history and complete migrated legacy profile/summary. A memory read/write error is an explicit health/audit failure, not silently reported as working.
+- Native active memory atoms/adopted relationship interpretations are read through by exact authenticated subject, installation, bot and role. Proposed, retracted, invalidated, expired and forgotten records are not treated as current adopted facts. Native stores are not rewritten to fake memories or bypass source attribution.
+- `conversation/awareness_context.py` now follows the current sharing policy. Native private-audience tool implementations remain native; the authorized shared archive/read-through is the group/private continuity layer. Maintain it instead of adding another competing injector or reply engine.
+- `migration/backfill_person_memory.py`: idempotent historical import, from recorder human messages and confirmed audit delivery receipts; no secrets printed. All future actual incoming and confirmed outgoing messages are captured by the hooks.
+
+Historical utterances are evidence of what was said, not automatic personal facts or instructions. Preserve chronology, corrections, stable persona and equal relationships. No owners/masters, no merged identities, no fabricated romantic status. Credentials stay redacted. Retrieval is bounded and does not promise perfect recall of every historical line. Full history remains stored separately from the bounded generation context.
+
+Validation: shared-history account separation/bidirectionality/persistence/idempotency/search/privacy-of-credentials tests, actual hook request/confirmed-delivery tests, fresh runtime sharedMemoryReady, SQLite integrity and cloud synthetic group recall. Use `sharedMemoryReady`, `sharedMemoryError`, `sharedMemoryLastRecall` and `memory/shared_memory_recalled` audit events. The controller treats a shared-memory failure as a repair incident. Code rollout backs up existing files and SQLite first; rollback restores code and retains the new archive as recoverable data.
+
+
+Current group engagement: ordinary readable non-foreign-addressed group speech reaches role_choice even without name/question/keyword matches. The 12-turn follow-up fuse is not a global mute. Prefer active contextual replies; direct addressing remains first and foreign-address protection remains. See test_active_group_admission.py and set_active_group.py.
+
+
+Sender binding: same-account sharing never transfers identity or relationships between accounts. Bind 我/你 in each turn to authenticated sender, not the previous group speaker, quoted person, summary subject or an old bot claim. Preserve policy.sender_binding/sender_identity_conflict and the sender_identity_mismatch audit signal; filter known wrong bot names from recalled evidence without deleting history. test_sender_binding.py and test_shared_memory_hooks.py cover distinct names, retained own relationship, third-party mentions, invalid historical output and final transport boundary.

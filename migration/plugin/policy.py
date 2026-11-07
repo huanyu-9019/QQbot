@@ -1,12 +1,16 @@
 """Small migration policies, independent of AstrBot imports for replay testing."""
 
 import re
+import json
+import hashlib
 import sqlite3
 import time
 from contextlib import closing
 from pathlib import Path
 
 _ANALYSIS = re.compile(r'\b(?:initial assessment|now assessing|debugging artifacts|chain[ -]of[ -]thought|the interaction (?:involves|indicates)|the user (?:expresses|is asking|wants|appears|seems)|the response should)\b|<(?:think|analysis)>', re.I)
+_RESPONSE_REASONING = re.compile(r'\b(?:the repeated use of .{1,100}? appears to be|further investigation is needed to ascertain|considering both options are unclear|the guidelines suggest active participation)\b', re.I | re.S)
+_REASONING_BOUNDARY = re.compile(r'</?(?:think|analysis|reasoning)(?:\s[^>]*)?>|<\|(?:analysis|start_header_id|end_header_id)\|>|(?m:^\s*(?:思考过程|内部分析|回复策略|analysis|reasoning)\s*[:：])', re.I)
 _UNEQUAL = re.compile(r'主人|奴隶|奴仆|所有者|支配者|服从|归.*所有|master|slave|owner', re.I)
 
 
@@ -16,7 +20,17 @@ def may_reply(segments, self_id, *, group):
         return True
     mentions = {str(p.get('data', {}).get('qq', '')) for p in segments
                 if isinstance(p, dict) and p.get('type') == 'at'}
-    return not (mentions - {str(self_id)}) or str(self_id) in mentions
+    if not (mentions - {str(self_id)}) or str(self_id) in mentions:
+        return True
+    prefix = ''
+    for part in segments:
+        if not isinstance(part, dict):
+            continue
+        if part.get('type') == 'at':
+            break
+        if part.get('type') == 'text':
+            prefix += str(part.get('data', {}).get('text', ''))
+    return bool(re.match(r'^\s*江生(?:[，,：:！!？?\s]|$)', prefix))
 
 
 def claim_message(database, platform, message_id, *, now=None):
@@ -69,7 +83,9 @@ def legacy_summary(record):
 
 def quality_issue(text, incoming=''):
     text = str(text or '')
-    if _ANALYSIS.search(text):
+    if '<QQ_SILENT>' in text and text.strip() != '<QQ_SILENT>':
+        return 'mixed_silence_marker'
+    if _ANALYSIS.search(text) or _RESPONSE_REASONING.search(text) or _REASONING_BOUNDARY.search(text):
         return 'analysis_leak'
     letters = len(re.findall(r'[a-z]', text, re.I))
     allowed = re.search(r'英文|英语|English|翻译|translate|代码|code|```', incoming, re.I)
@@ -84,3 +100,63 @@ def confirmed_send(result):
         return False
     data = result.get('data', result)
     return isinstance(data, dict) and data.get('message_id') is not None
+
+
+def identity_answer(text, profile, display_name):
+    """Answer exact self-identification from this sender's record only."""
+    question = re.sub(r'^\s*(?:@?江生[，,：:！!？?\s]*)?', '', str(text or ''))
+    question = question.strip(' \t\r\n?？。！!')
+    if question not in ('我是谁', '我叫什么', '我叫什么名字', '你记得我叫什么吗'):
+        return None
+    name = profile.get('preferredName')
+    if isinstance(name, str) and name.strip() and len(name.strip()) <= 40 and not _UNEQUAL.search(name):
+        return '你是' + redact(name.strip()) + '。'
+    name = redact(str(display_name or '未设置').strip())[:40]
+    return '你现在的群名片是' + name + '；还没确认你想让我怎么称呼你。'
+
+
+def sender_binding(root, account, display_name):
+    """Bind names to authenticated profile filenames, never to shared chat text."""
+    key = hashlib.sha256(('user:' + str(account)).encode()).hexdigest()
+    folder = Path(root) / 'legacy/qq-user-memory'
+    own, others, relationships = set(), set(), []
+    preferred = ''
+    for path in folder.glob('*.json'):
+        try:
+            profile = json.loads(path.read_text(encoding='utf-8')).get('profile', {})
+            names = [profile.get('preferredName'), profile.get('privateNickname')]
+            group_names = profile.get('groupNicknames', {})
+            if isinstance(group_names, dict):
+                names.extend(group_names.values())
+            names = {v.strip() for v in names if isinstance(v, str) and 2 <= len(v.strip()) <= 40 and not _UNEQUAL.search(v)}
+            if path.stem == key:
+                own.update(names)
+                value = profile.get('preferredName')
+                preferred = value.strip() if isinstance(value, str) and value.strip() in names else ''
+                values = profile.get('relationships', [])
+                relationships = [redact(v)[:160] for v in values[:8] if isinstance(v, str) and not _UNEQUAL.search(v)] if isinstance(values, list) else []
+            else:
+                others.update(names)
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    display = redact(display_name).strip()[:40]
+    if display:
+        own.add(display)
+    return {'account': str(account), 'name': preferred or display,
+            'aliases': sorted(own), 'foreign_aliases': sorted(others - own),
+            'relationships': relationships}
+
+
+def sender_identity_conflict(text, binding):
+    """Detect direct misidentification, allowing ordinary third-person mentions."""
+    own = set(binding.get('aliases', []))
+    for name in binding.get('foreign_aliases', []):
+        if name in own:
+            continue
+        alias = re.escape(name)
+        ending = r'(?:[啊呀啦呢哦吧～~\s]*[。！!？?，,；;]|[啊呀啦呢哦吧～~\s]*$)'
+        if re.search(r'(?:^|[。！!？?\n])\s*你(?:就)?是(?:我的|我家|咱家)?\s*' + alias + ending, str(text)):
+            return True
+        if re.match(r'^\s*' + alias + r'[，,：:]\s*', str(text)):
+            return True
+    return False

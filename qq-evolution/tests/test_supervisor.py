@@ -3,6 +3,7 @@ import sys
 import unittest
 import tempfile
 import subprocess
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -82,6 +83,52 @@ if __name__ == "__main__":
 
 
 class PreservedBaselineTests(unittest.TestCase):
+    def test_release_failure_classifier_returns_stage_not_raw_stderr(self):
+        self.assertEqual(service.release_failure_code(1, 'RuntimeError: production test suite failed'), 'production_tests')
+        self.assertEqual(service.release_failure_code(255, 'ssh connection timed out'), 'ssh_transport')
+
+    def test_release_lock_conflict_is_returned_and_recorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lock = root / 'release.lock'
+            lock.write_text(str(os.getpid()))
+            with patch.object(service, 'STATE', root / 'state.json'), patch.object(service, 'record_monitor_health') as heartbeat:
+                result = service.publish_iteration_patch_result('unused', root)
+            self.assertEqual(result, (False, 'release_lock_busy'))
+            self.assertEqual(heartbeat.call_args.kwargs['lastReleaseFailure'], 'release_lock_busy')
+
+    def test_production_test_failure_is_returned_without_storing_stderr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(service, 'STATE', root / 'state.json'), \
+                 patch.object(service, 'check_candidate'), \
+                 patch.object(service, 'record_monitor_health') as heartbeat, \
+                 patch.object(service.subprocess, 'run', return_value=SimpleNamespace(returncode=1, stderr='production test suite failed; token=private')):
+                result = service.publish_iteration_patch_result('patch', root)
+            self.assertEqual(result, (False, 'production_tests'))
+            self.assertEqual(heartbeat.call_args.kwargs['lastReleaseFailure'], 'production_tests')
+            self.assertNotIn('private', str(heartbeat.call_args.kwargs))
+
+    def test_learning_record_keeps_safe_release_failure_code(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / 'state.json'
+            diff = '--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-old\n+new\n'
+            response = json.dumps({'finding': {'category': 'quality', 'changeType': 'code'},
+                                   'diff': diff, 'reflection': '减少重复表达并保留语境'})
+            with patch.multiple(service, STATE=state, LOCK=root / 'job.lock'), \
+                 patch.object(service, 'fetch_learning_events', return_value=[]), \
+                 patch.object(service, 'check_candidate'), \
+                 patch.object(service, 'record_monitor_health'), \
+                 patch.object(service, 'publish_iteration_patch', return_value=False), \
+                 patch.object(service, 'publish_iteration_patch_result', return_value=(False, 'release_lock_busy'), create=True), \
+                 patch('agent._invoke_fixed', return_value=response):
+                service.run_learning_iteration(root, service.StateStore(state))
+            row = json.loads((root / 'learning-records.jsonl').read_text(encoding='utf-8').splitlines()[-1])
+            self.assertIn('release_lock_busy', row['reason'])
+            self.assertNotIn('stderr', row['reason'].lower())
+
     def test_learning_fetch_refreshes_monitor_freshness(self):
         from unittest.mock import patch
         with patch.object(service, "fetch_remote_events", return_value=[{"text": "safe"}]), \

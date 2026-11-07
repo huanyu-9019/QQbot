@@ -19,6 +19,15 @@ def reply_quality_issue(text, incoming=''):
 
 
 def aggregate(events, minimum_pairs=3):
+    private_openings = defaultdict(dict)
+    for row in events:
+        if (row.get('direction') == 'delivered' and row.get('kind') == 'private'
+                and row.get('sessionHash') and row.get('turnId')):
+            private_openings[row['sessionHash']].setdefault(row['turnId'], str(row.get('text', '')).strip())
+    habitual_acknowledgements = sum(
+        len(turns) >= 5 and sum(bool(re.match(r'^嗯+(?:[，,。.!！?？、\s]|$)', text))
+                               for text in list(turns.values())[-20:]) / min(20, len(turns)) >= .6
+        for turns in private_openings.values())
     pending = {}
     pairs = []
     silences = 0
@@ -69,18 +78,21 @@ def aggregate(events, minimum_pairs=3):
     incoming_by_turn = {row.get('turnId'): row.get('text', '') for row in events if row.get('direction') == 'incoming'}
     issues = [reply_quality_issue(row.get('text'), incoming_by_turn.get(row.get('turnId'), ''))
               for row in events if row.get('direction') == 'delivered']
-    blocked = sum(row.get('direction') == 'quality' and row.get('outcome') in {'analysis_leak','unexpected_english'} for row in events)
+    blocked_identity = sum(row.get('direction') == 'quality' and row.get('outcome') == 'sender_identity_mismatch' for row in events)
+    blocked = sum(row.get('direction') == 'quality' and row.get('outcome') in {'analysis_leak','unexpected_english'} for row in events) + blocked_identity
     total_turns = len(pairs) + silences
     return {
         "eligible": len(pairs) >= minimum_pairs,
         "analysisLeaks": issues.count('analysis_leak'),
         "unexpectedEnglishReplies": issues.count('unexpected_english'),
         "blockedQualityReplies": blocked,
+        "blockedIdentityReplies": blocked_identity,
         "mediaFailures": sum(row.get('direction') == 'quality' and row.get('outcome') in {'stt_failed', 'tts_failed', 'vision_failed'} for row in events),
         "pairs": len(pairs),
         "silences": silences,
         "unobservableTurns": unobservable,
         "repeatedReplies": repeated,
+        "habitualAcknowledgementSessions": habitual_acknowledgements,
         "meanLatencyMs": sum(pairs) / len(pairs) if pairs else None,
         "successRate": len(pairs) / total_turns if total_turns else 0.0,
         "foreignMentionReplies": foreign_mention_replies,

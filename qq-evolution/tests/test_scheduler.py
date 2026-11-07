@@ -14,6 +14,11 @@ class SchedulerTests(unittest.TestCase):
         self.assertTrue(25 <= len(text) <= 140)
         self.assertIn('未发布代码',text)
 
+    def test_learning_notice_passes_publication_content_gate(self):
+        import re
+        text=learning_notice({'iteration':1,'updated':'learning_record','reason':'减少重复套话'})
+        self.assertFalse(re.search(r'https?://|www\.|@|#|<QQ_SILENT>|(?:\d[\s-]?){7,}',text,re.I))
+
     def test_failed_assessment_notice_is_not_claimed_as_learning(self):
         text=learning_notice({'iteration':1,'reason':'Iteration assessment unavailable: ValueError'})
         self.assertIn('评估失败',text)
@@ -33,8 +38,12 @@ class SchedulerTests(unittest.TestCase):
             self.assertEqual(rows[1]["updated"], "code")
 
     def test_iteration_due_is_measured_from_last_completed_learning_round(self):
-        self.assertFalse(iteration_due({"lastIteration": 100}, 999))
-        self.assertTrue(iteration_due({"lastIteration": 100}, 1000))
+        self.assertFalse(iteration_due({"lastIteration": 100}, 1899))
+        self.assertTrue(iteration_due({"lastIteration": 100}, 1900))
+
+    def test_learning_round_runs_every_thirty_minutes(self):
+        self.assertFalse(iteration_due({"lastIteration": 100}, 1899))
+        self.assertTrue(iteration_due({"lastIteration": 100}, 1900))
 
 
 if __name__ == "__main__":

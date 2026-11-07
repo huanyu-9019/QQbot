@@ -1,6 +1,6 @@
 import re
 
-ALLOWED = re.compile(r"^(?:qq-[A-Za-z0-9._-]+\.mjs|qq-persona\.md|qq-[A-Za-z0-9._-]+\.test\.mjs|qq-chat-router\.py|migration/plugin/(?:main|policy|speech|retention)\.py)$")
+ALLOWED = re.compile(r"^(?:qq-[A-Za-z0-9._-]+\.mjs|qq-persona\.md|qq-[A-Za-z0-9._-]+\.test\.mjs|qq-chat-router\.py|migration/plugin/(?:main|policy|speech|retention|person_memory)\.py|migration/companion/companion_v2/(?:conversation/(?:group_questions|participation|group_admission|awareness_context)|memory/person/service|expression/style_service)\.py)$")
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$")
 _UNEQUAL = re.compile(r"主人|奴隶|主仆|奴役|支配|服从|所有物|所有者|占有|低人一等|高人一等|不平等|剥夺人权|没有人权|无条件听命|强迫服从|人身控制|人身自由受限|剥夺自由|剥夺权利|霸凌|虐待|压迫|剥削|性别歧视|种族歧视|阶级歧视|human rights violation|slave owner|master and slave|enslavement", re.I)
 _NEGATION = re.compile(r"没有|不受|不因|不把|拒绝|反对|不允许|禁止|不要|不应|不该|不得|避免|反抗|摆脱|no\s+|not\s+|never\s+|without\s+|against\s+", re.I)

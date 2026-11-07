@@ -65,7 +65,7 @@ def sanitize_record(record):
     }:
         row["outcome"] = record["outcome"]
     if record['direction'] == 'quality':
-        if record.get('outcome') not in {'analysis_leak', 'unexpected_english', 'stt_failed', 'tts_failed', 'vision_failed'}: return None
+        if record.get('outcome') not in {'analysis_leak', 'unexpected_english', 'stt_failed', 'tts_failed', 'vision_failed', 'sender_identity_mismatch'}: return None
         row['outcome'] = record['outcome']
         row['text'] = ''
     return row

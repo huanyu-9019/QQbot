@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from contextlib import contextmanager
 from patch_policy import changed_paths
-from runtime_support import ASTRBOT_FILES, probe_runtime, responder_unit
+from runtime_support import ASTRBOT_FILES, COMPANION_FILES, companion_destination, probe_runtime, responder_unit
 
 SOURCE = Path("/home/hermes")
 SNAPSHOTS = SOURCE / "qq-evolution-snapshots"
@@ -28,7 +28,7 @@ FILES = [
     "qq-model-fallback.mjs", "qq-model-health.mjs",
     "qq-chat-router.py",
 ]
-FILES += list(ASTRBOT_FILES)
+FILES += list(ASTRBOT_FILES) + list(COMPANION_FILES)
 SNAPSHOT_FILES = sorted(FILES + [
     "qq-gemini-tts.test.mjs", "qq-group-routing.test.mjs", "qq-live-facts.test.mjs",
     "qq-media.test.mjs", "qq-memory-cross-session.test.mjs", "qq-memory-recent.test.mjs",
@@ -84,7 +84,7 @@ def health(since=0):
     marker = Path('/etc/jiangsheng-runtime')
     if marker.exists() and marker.read_text().strip() == 'astrbot':
         state = probe_runtime(since=since)
-        return state.get('api') is True and state.get('qqConnected') is True and state.get('reply') is True
+        return state.get('api') is True and state.get('qqConnected') is True and state.get('reply') is True and state.get('sharedMemoryReady') is not False
     bridge = run(["/usr/bin/systemctl", "is-active", "qq-hermes-bridge.service"], timeout=15)
     api = run(["/usr/bin/systemctl", "is-active", "hermes-qq-api.service"], timeout=15)
     return bridge.stdout.strip() == "active" and api.stdout.strip() == "active"
@@ -102,6 +102,16 @@ def sync_astrbot():
         shutil.copy2(SOURCE / name, destination)
         owner = (SOURCE / name).stat()
         os.chown(destination, owner.st_uid, owner.st_gid)
+    for name in COMPANION_FILES:
+        source = SOURCE / name
+        if not source.exists():
+            raise RuntimeError('native source baseline is incomplete')
+        destination = companion_destination(name)
+        if destination.is_symlink() or not destination.is_file():
+            raise RuntimeError('native destination is not a regular file')
+        shutil.copy2(source, destination)
+        owner = source.stat()
+        os.chown(destination, owner.st_uid, owner.st_gid)
     script = '''import asyncio,os,sys
 from pathlib import Path
 os.environ['ASTRBOT_ROOT']='/opt/jiangsheng-astrbot/runtime'
@@ -115,6 +125,27 @@ asyncio.run(main())
     result = run(['/usr/sbin/runuser', '-u', 'hermes', '--', '/opt/jiangsheng-astrbot/venv/bin/python', '-c', script])
     if result.returncode:
         raise RuntimeError('AstrBot persona synchronization failed')
+
+
+def verify_companion_sources(paths):
+    checks = {
+        'conversation/group_questions.py': ('test_social_questions.py',),
+        'conversation/group_admission.py': ('test_mixed_admission.py', 'test_active_group_admission.py'),
+        'memory/person/service.py': ('test_person_identity.py',),
+        'expression/style_service.py': ('test_expression_request_contract.py',),
+    }
+    for name in paths:
+        if name not in COMPANION_FILES:
+            continue
+        if run(['/opt/jiangsheng-astrbot/venv/bin/python', '-m', 'py_compile', str(SOURCE / name)], timeout=30).returncode:
+            raise RuntimeError('native source syntax failed')
+        for short, tests in checks.items():
+            if name.endswith(short):
+                for test in tests:
+                    result = run(['/opt/jiangsheng-astrbot/venv/bin/python', str(SOURCE/'migration/patches'/test), str(SOURCE/name)], timeout=45)
+                    if result.returncode:
+                        raise RuntimeError('native contract regression failed')
+
 
 
 def apply_source_patch(source, diff, git="/usr/bin/git"):
@@ -179,6 +210,7 @@ def apply_locked(diff):
             check_python = run(['/opt/jiangsheng-astrbot/venv/bin/python', '-m', 'compileall', '-q', str(SOURCE / 'migration/plugin')])
             if check_python.returncode:
                 raise RuntimeError('AstrBot syntax check failed')
+            verify_companion_sources(paths)
             sync_astrbot()
         if 'qq-chat-router.py' in paths:
             if run(['/usr/bin/systemctl', 'restart', 'qq-chat-router.service'], timeout=60).returncode:

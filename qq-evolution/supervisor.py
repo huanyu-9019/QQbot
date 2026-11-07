@@ -57,8 +57,8 @@ def check_candidate(diff, repo):
     allowed_files = {path.name for path in repo.glob("qq-*.mjs")}
     if (repo / "qq-persona.md").is_file():
         allowed_files.add("qq-persona.md")
-    from runtime_support import ASTRBOT_FILES
-    allowed_files.update(name for name in ASTRBOT_FILES if (repo / name).is_file())
+    from runtime_support import ASTRBOT_FILES, COMPANION_FILES
+    allowed_files.update(name for name in (*ASTRBOT_FILES, *COMPANION_FILES) if (repo / name).is_file())
     if (repo / 'qq-chat-router.py').is_file():
         allowed_files.add('qq-chat-router.py')
     paths = changed_paths(diff, allowed_files)
@@ -162,17 +162,17 @@ def run_learning_iteration(repo,state):
                 raise ValueError('invalid learning reflection')
             diff=raw['diff']; finding=raw['finding']; reflection=raw['reflection'].strip()
             if diff and finding:
-                diff=recount_hunks(diff);check_candidate(diff,repo)
-                result=publish_iteration_patch(diff,repo)
-                if result:
+                diff=recount_hunks(diff)
+                published, failure=publish_iteration_patch_result(diff,repo)
+                if published:
                     category=finding.get('category','quality')
                     change=finding.get('changeType','code')
                     current=state.load();record_iteration(current,now=int(time.time()),updated=True,reason=f'{category}/{change}: {reflection}',revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip());state.save(current)
                     append_learning_record(STATE.parent/'learning-records.jsonl',current)
                     return
             reason=reflection
-            if finding:
-                reason+='; candidate did not pass the release gate'
+            if finding and diff:
+                reason+='; release rejected: '+(failure or 'unknown')
         except Exception as error:reason='Iteration assessment unavailable: '+type(error).__name__
         current=state.load();record_iteration(current,now=int(time.time()),updated=False,reason=reason);state.save(current)
         append_learning_record(STATE.parent/'learning-records.jsonl',current)
@@ -197,7 +197,8 @@ def flush_learning_notices():
         attempts += 1
         text=learning_notice(row)
         try:
-            publish_event(f'qq-learn-{iteration}',text)
+            if not publish_event(f'qq-learn-{iteration}',text):
+                break
             acknowledged[str(iteration)] = int(time.time())
             receipts.save(acknowledged)
         except Exception as error:
@@ -205,19 +206,62 @@ def flush_learning_notices():
             break
 
 
-def publish_iteration_patch(diff,repo):
+def release_failure_code(returncode, stderr):
+    if returncode == 255:
+        return 'ssh_transport'
+    markers = (
+        ('production test suite failed', 'production_tests'),
+        ('AstrBot regression suite failed', 'astrbot_tests'),
+        ('syntax check failed', 'syntax_check'),
+        ('restart failed', 'restart'),
+        ('health check failed', 'health_check'),
+        ('real completion verification failed', 'completion_check'),
+        ('stability observation failed', 'stability_check'),
+        ('rollback health check failed', 'rollback_health'),
+        ('fixed patch application failed', 'patch_apply'),
+        ('patch rejected', 'patch_validation'),
+        ('insufficient free disk space', 'capacity'),
+    )
+    for marker, code in markers:
+        if marker.lower() in str(stderr).lower():
+            return code
+    return 'production_exit_'+str(returncode)
+
+
+def publish_iteration_patch_result(diff,repo):
     lock = SingleJobLock(STATE.parent/'release.lock')
     if not lock.acquire():
-        return False
+        record_monitor_health(lastReleaseStatus='busy',lastReleaseFailure='release_lock_busy')
+        return False,'release_lock_busy'
     try:
-        check_candidate(diff, repo)
+        try:
+            check_candidate(diff, repo)
+        except ValueError:
+            record_monitor_health(lastReleaseStatus='rejected',lastReleaseFailure='candidate_validation')
+            return False,'candidate_validation'
         args=['/usr/bin/ssh','-i','/home/admin/.ssh/qq-evolution-prod','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',PRODUCTION_HOST,'sudo /usr/bin/python3 /home/hermes/qq-evolution-release.py']
-        result=subprocess.run(args,input=diff,text=True,capture_output=True,timeout=600,check=False)
-        if result.returncode:return False
+        try:
+            result=subprocess.run(args,input=diff,text=True,capture_output=True,timeout=600,check=False)
+        except subprocess.TimeoutExpired:
+            record_monitor_health(lastReleaseStatus='failed',lastReleaseFailure='production_timeout')
+            return False,'production_timeout'
+        except OSError:
+            record_monitor_health(lastReleaseStatus='failed',lastReleaseFailure='ssh_execution_error')
+            return False,'ssh_execution_error'
+        if result.returncode:
+            failure=release_failure_code(result.returncode,result.stderr)
+            record_monitor_health(lastReleaseStatus='rejected',lastReleaseFailure=failure)
+            return False,failure
         advance_baseline(diff,repo)
-        return True
+        record_monitor_health(lastReleaseStatus='healthy',lastReleaseFailure=None)
+        return True,None
     finally:
         lock.release()
+
+
+def publish_iteration_patch(diff,repo):
+    published,_=publish_iteration_patch_result(diff,repo)
+    return published
 
 
 def main():

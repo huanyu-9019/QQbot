@@ -6,6 +6,7 @@ import pwd
 import shutil
 import sys
 from pathlib import Path
+from reply_routing import companion_owns_wakeup
 
 BASE = Path('/opt/jiangsheng-astrbot')
 DATA = BASE / 'runtime/data'
@@ -26,7 +27,7 @@ def configure():
     router.update(api_base='http://127.0.0.1:8650/v1', key=[route['localKey']])
     c['platform'] = [dict(id='jiangsheng', type='aiocqhttp', name='江生 QQ', enable=True,
         ws_reverse_host='127.0.0.1', ws_reverse_port=6199, ws_reverse_token='')]
-    c['wake_prefix'] = ['江生', '@江生']
+    companion_owns_wakeup(c)
     c['platform_settings'].update(enable_id_white_list=False, ignore_bot_self_message=True, ignore_at_all=True)
     c['provider_settings'].pop('provider_id', None)
     c['provider_settings'].update(default_image_caption_provider_id='jiangsheng-chat', max_quoted_fallback_images=3)
