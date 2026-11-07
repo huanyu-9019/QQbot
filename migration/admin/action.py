@@ -10,6 +10,8 @@ import os
 import re
 import shutil
 import stat
+import sqlite3
+from contextlib import closing
 import subprocess
 import sys
 import tempfile
@@ -26,7 +28,7 @@ PERSONA_TEXT = HERMES / "qq-persona.md"
 BACKUPS = Path("/var/lib/grok-admin-panel/backups")
 AUDIT = Path("/var/lib/grok-admin-panel/audit.jsonl")
 HERMES_BIN = HERMES / ".local/bin/hermes"
-USER_MEMORY = HERMES / "qq-user-memory"
+USER_MEMORY = Path('/opt/jiangsheng-astrbot/runtime/data/legacy/qq-user-memory')
 RELATIONSHIP_MEMORY = HERMES / "qq-relationship"
 APT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9+.-]*$")
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$")
@@ -592,6 +594,37 @@ def apply_update(kind: Any, package: Any = None, candidate: Any = None, snapshot
 
 
 
+def memory_support():
+    """Load audited stdlib-only code, without initializing the AstrBot plugin."""
+    import importlib
+    import types
+    local = Path(__file__).resolve().parents[1]/'plugin'
+    folder = local if (local/'person_memory.py').is_file() else Path('/home/hermes/migration/plugin')
+    name = '_jiangsheng_admin_memory'
+    if name not in sys.modules:
+        package = types.ModuleType(name)
+        package.__path__ = [str(folder)]
+        sys.modules[name] = package
+    return importlib.import_module(name+'.policy'), importlib.import_module(name+'.person_memory')
+
+
+def native_profile(qq: str, database=None) -> dict[str, Any]:
+    database = Path(database or '/opt/jiangsheng-astrbot/runtime/data/plugin_data/astrbot_plugin_private_companion/installations/jiangsheng/runtime/companion-v2.sqlite3')
+    if not database.is_file():
+        return {'status': 'unavailable', 'facts': []}
+    try:
+        _, support = memory_support()
+        values = support.native_memories(database, qq, limit=100)
+        facts = [{'category': x.get('category') or ('关系理解' if x['kind'] == 'adopted_relationship_interpretation' else '已保存记忆'),
+                  'value': x.get('value'), 'detail': x['text'], 'updatedAt': x['updated_at'],
+                  'sourceCount': x.get('sourceCount'), 'confidence': x.get('confidence'),
+                  'attribution': x.get('attribution'), 'kind': x['kind']} for x in values]
+        return {'status': 'available', 'facts': facts}
+    except (sqlite3.Error, ValueError, TypeError, OSError):
+        return {'status': 'unavailable', 'facts': []}
+
+
+
 def profile_read(qq: Any) -> dict[str, Any]:
     if not isinstance(qq, str) or not qq.isdigit() or not 5 <= len(qq) <= 12:
         raise ActionError("QQ 号格式无效")
@@ -615,9 +648,19 @@ def profile_read(qq: Any) -> dict[str, Any]:
         "stage", "familiarity", "trust", "affection", "boundary",
         "lastMood", "milestones", "turns", "updatedAt",
     )
+    policy, support = memory_support()
+    portrait = policy.person_portrait(profile, relationship)
+    history_path = Path('/opt/jiangsheng-astrbot/runtime/data/jiangsheng-person-memory.sqlite3')
+    try:
+        portrait['history'] = support.interaction_timeline(history_path, qq)
+        portrait['history']['status'] = 'available'
+    except (sqlite3.Error, ValueError, OSError):
+        portrait['history'] = {'status': 'unavailable', 'excerpts': []}
     return {
+        "portrait": portrait,
         "profile": {key: profile[key] for key in profile_keys if key in profile},
         "relationship": {key: relationship[key] for key in relationship_keys if key in relationship},
+        "native": native_profile(qq),
         "readOnly": True,
     }
 
@@ -713,4 +756,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

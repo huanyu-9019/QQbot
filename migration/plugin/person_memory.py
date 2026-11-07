@@ -119,6 +119,9 @@ class PersonMemory:
             row = db.execute('SELECT count(*),count(DISTINCT account) FROM interactions').fetchone()
             return {'entries':row[0],'accounts':row[1]}
 
+    def timeline(self, account):
+        return interaction_timeline(self.path, account)
+
     def import_recorder(self, path, *, max_rows=1000):
         """Incremental human history import; bot messages need delivery attribution."""
         path = Path(path)
@@ -159,8 +162,25 @@ class PersonMemory:
         return profile_context(record.get('profile',{}))+'\n'+legacy_summary(record)
 
 
+def interaction_timeline(path, account):
+    """Read-only excerpts, explicitly not extracted facts or relationship claims."""
+    if not str(account).isdecimal():
+        raise ValueError('timeline requires authenticated account')
+    with closing(sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro', uri=True, timeout=3)) as db:
+        db.row_factory = sqlite3.Row
+        row = db.execute("SELECT count(*),min(at),max(at) FROM interactions WHERE account=? AND speaker='human'", (str(account),)).fetchone()
+        channels = sorted({x[0].split(':',1)[0] for x in db.execute("SELECT DISTINCT channel FROM interactions WHERE account=? AND speaker='human'", (str(account),))})
+        query = "SELECT id,channel,speaker,text,at,source FROM interactions WHERE account=? AND speaker IN ('human','bot')"
+        first = db.execute(query+' ORDER BY at,id LIMIT 4', (str(account),)).fetchall()
+        recent = db.execute(query+' ORDER BY at DESC,id DESC LIMIT 8', (str(account),)).fetchall()
+        rows = sorted({x['id']:x for x in [*first,*recent]}.values(), key=lambda x:(x['at'],x['id']))
+        return {'humanTurns': row[0], 'firstAt': row[1], 'lastAt': row[2], 'channels': channels,
+                'excerpts': [{'speaker': x['speaker'], 'text': redact(x['text'])[:600],
+                              'channel': x['channel'].split(':',1)[0], 'at': x['at'], 'source': x['source']} for x in rows]}
+
+
 def native_memories(path, account, *, installation='astrbot-private-companion-v2:multi:jiangsheng',
-                    bot='bot-3899701587', role='jiangsheng'):
+                    bot='bot-3899701587', role='jiangsheng', limit=12):
     """Operator-authorized cross-channel view of active same-person native data.
 
     Native ownership and revocations remain authoritative. This read-through
@@ -187,7 +207,7 @@ def native_memories(path, account, *, installation='astrbot-private-companion-v2
         subject = next(iter(subjects))
         owner = hashlib.sha256(encode([installation,bot,role,subject,'private']).encode()).hexdigest()
         if 'memory_atoms' in tables:
-            for raw,updated in db.execute("SELECT record_json,updated_at FROM memory_atoms WHERE owner_key=? AND state='active' ORDER BY updated_at DESC LIMIT 12",(owner,)):
+            for raw,updated in db.execute("SELECT record_json,updated_at FROM memory_atoms WHERE owner_key=? AND subject='self' AND state='active' ORDER BY updated_at DESC LIMIT ?",(owner,max(1,min(100,int(limit))))):
                 record = json.loads(raw)
                 if record.get('forgotten') or record.get('archived'):
                     continue
@@ -198,7 +218,11 @@ def native_memories(path, account, *, installation='astrbot-private-companion-v2
                         continue
                 value = proposal.get('representation')
                 if isinstance(value,str) and value.strip():
-                    output.append({'kind':'native_memory','text':redact(value)[:1800],'updated_at':updated})
+                    output.append({'kind':'native_memory','text':redact(value)[:1800],'updated_at':updated,
+                                   'category':redact(proposal.get('predicate'))[:100],
+                                   'value':redact(proposal.get('object'))[:300],
+                                   'sourceCount':len(proposal.get('evidence') or []),
+                                   'confidence':proposal.get('confidence'), 'attribution':proposal.get('attribution')})
         if 'relationship_memories' in tables:
             for own,sub,raw,updated in db.execute("SELECT owner_json,subject_json,record_json,updated_at FROM relationship_memories WHERE state='adopted' ORDER BY updated_at DESC LIMIT 200"):
                 own,sub = json.loads(own),json.loads(sub)
