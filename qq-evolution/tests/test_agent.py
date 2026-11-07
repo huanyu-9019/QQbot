@@ -11,6 +11,23 @@ from agent import _failure_code, _invoke_fixed, evaluate, evaluate_and_propose, 
 
 
 class AgentTests(unittest.TestCase):
+    def test_habitual_private_acknowledgements_are_reported_as_a_repairable_style_issue(self):
+        calls = []
+        response = {"finding": None, "diff": ""}
+        def runner(args, prompt, cwd):
+            calls.append(prompt)
+            return json.dumps(response)
+        events = []
+        for i in range(6):
+            events.extend([
+                {"direction":"incoming", "kind":"private", "sessionHash":"a"*64, "turnId":str(i), "timestamp":i*2, "text":"你好"},
+                {"direction":"delivered", "kind":"private", "sessionHash":"a"*64, "turnId":str(i), "timestamp":i*2+1, "text":"嗯……我在呢。"},
+            ])
+        evaluate_and_propose(events, runner=runner)
+        self.assertIn('"habitualAcknowledgementSessions": 1', calls[0])
+        self.assertIn('private opening acknowledgement', calls[0])
+        self.assertIn('output normalization', calls[0])
+
     def test_relay_wrapper_resolves_credential_and_cli_from_service_home(self):
         script = relay_wrapper_text()
         self.assertIn('$HOME/.config/codex/proxy.key', script)

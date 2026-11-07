@@ -10,7 +10,7 @@ cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='Jiangsh
 cls.bases=[];cls.decorator_list=[];cls.body=[n for n in cls.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name in ('patch_client','remember','shared_person_context','imported_facts','generated','mentioned_people')]
 for n in cls.body:n.decorator_list=[]
 current=contextvars.ContextVar('current',default=None)
-ns={'asyncio':asyncio,'json':json,'hashlib':hashlib,'time':time,'re':re,'current_message_event':current,'native_memories':mem.native_memories,'SHARED_MEMORY_INSTRUCTION':mem.INSTRUCTION,**{k:getattr(policy,k) for k in ('quality_issue','confirmed_send','profile_context','legacy_summary','identity_answer','sender_binding','sender_identity_conflict','message_segments','mention_identity_question','mentioned_identity_answer','person_portrait','redact')}}
+ns={'asyncio':asyncio,'json':json,'hashlib':hashlib,'time':time,'re':re,'current_message_event':current,'native_memories':mem.native_memories,'SHARED_MEMORY_INSTRUCTION':mem.INSTRUCTION,**{k:getattr(policy,k) for k in ('quality_issue','confirmed_send','profile_context','legacy_summary','identity_answer','sender_binding','sender_identity_conflict','message_segments','mention_identity_question','mentioned_identity_answer','person_portrait','redact','remove_redundant_private_ack')}}
 exec(compile(ast.Module(body=[cls],type_ignores=[]),'live-hooks','exec'),ns)
 class Event:
  def __init__(self,uid='100',group='9'):
@@ -25,6 +25,13 @@ class Hooks(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
   self.obj=ns['JiangshengMigration']();self.obj.root=Path(self.tmp.name);self.obj.person_memory=mem.PersonMemory(self.obj.root/'m.db');self.obj.shared_memory_error=None;self.obj.patched=[];self.obj.write=lambda *a,**k:None;self.obj.voice_requested=lambda e:False
+ async def test_generated_private_reply_removes_redundant_ack_but_group_reply_keeps_it(self):
+  event=Event(group='');event.message_str='累了';response=types.SimpleNamespace(completion_text='嗯……那休息吧。')
+  await self.obj.generated(event,response)
+  self.assertEqual(response.completion_text,'那休息吧。')
+  group=Event();group.message_str='你好';response=types.SimpleNamespace(completion_text='嗯，在呢。')
+  await self.obj.generated(group,response)
+  self.assertEqual(response.completion_text,'嗯，在呢。')
  async def test_mention_without_legacy_profile_resolves_live_group_member_and_grounded_reply(self):
   event=Event();event.message_str='江生， @梦l 是谁'
   event.message_obj.raw_message={'message':[{'type':'text','data':{'text':'江生， '}},{'type':'at','data':{'qq':'200'}},{'type':'text','data':{'text':'是谁'}}]}

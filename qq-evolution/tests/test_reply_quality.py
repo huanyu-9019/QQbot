@@ -7,6 +7,12 @@ from metrics import aggregate,reply_quality_issue,overdue_turns
 from collector import sanitize_record
 import agent,supervisor
 class ReplyQualityTests(unittest.TestCase):
+ def test_habitual_acknowledgement_metric_counts_ellipsis_and_question_openings(self):
+  events=[]
+  for i,text in enumerate(['嗯……我在呢。','嗯？怎么啦。','嗯，在。','嗯……知道了。','嗯，好。']):
+   events.extend([dict(direction='incoming',kind='private',sessionHash='a'*64,turnId=str(i),timestamp=i*2,text='你好'),
+                  dict(direction='delivered',kind='private',sessionHash='a'*64,turnId=str(i),timestamp=i*2+1,text=text)])
+  self.assertEqual(aggregate(events)['habitualAcknowledgementSessions'],1)
  def test_identity_conflict_survives_collection_and_is_counted(self):
   row=sanitize_record(dict(timestamp=1,direction='quality',kind='group',sessionHash='a'*64,text='secret name',outcome='sender_identity_mismatch',turnId='x'))
   self.assertIsNotNone(row)

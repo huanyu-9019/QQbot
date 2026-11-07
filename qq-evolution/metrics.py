@@ -25,7 +25,7 @@ def aggregate(events, minimum_pairs=3):
                 and row.get('sessionHash') and row.get('turnId')):
             private_openings[row['sessionHash']].setdefault(row['turnId'], str(row.get('text', '')).strip())
     habitual_acknowledgements = sum(
-        len(turns) >= 5 and sum(bool(re.match(r'^嗯+(?:[，,。.!！?？、\s]|$)', text))
+        len(turns) >= 5 and sum(bool(re.match(r'^嗯+(?:[，,。.!！?？、…\s]|$)', text))
                                for text in list(turns.values())[-20:]) / min(20, len(turns)) >= .6
         for turns in private_openings.values())
     pending = {}

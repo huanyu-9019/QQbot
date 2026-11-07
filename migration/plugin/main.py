@@ -18,7 +18,7 @@ from astrbot.core.provider.entities import ProviderType
 from astrbot.core.provider.register import register_provider_adapter
 from astrbot.core.utils.media_utils import MediaResolver
 
-from .policy import claim_message, confirmed_send, may_reply, profile_context, quality_issue, redact, legacy_summary, identity_answer, sender_binding, sender_identity_conflict, message_segments, mention_identity_question, mentioned_identity_answer, person_portrait
+from .policy import claim_message, confirmed_send, may_reply, profile_context, quality_issue, redact, legacy_summary, identity_answer, sender_binding, sender_identity_conflict, message_segments, mention_identity_question, mentioned_identity_answer, person_portrait, remove_redundant_private_ack
 from .speech import transcribe
 from .retention import prune_media
 from .person_memory import PersonMemory, native_memories, INSTRUCTION as SHARED_MEMORY_INSTRUCTION
@@ -425,6 +425,9 @@ class JiangshengMigration(Star):
             self.write('quality', event, outcome='sender_identity_mismatch')
             name = binding.get('name') or '你'
             response.completion_text = name + '，刚才把人认混了，不能把我和别人的来往算在你身上。'
+            text = response.completion_text
+        if not event.get_group_id():
+            response.completion_text = remove_redundant_private_ack(text)
             text = response.completion_text
         if event.get_extra('jiangsheng_media') == 'image' and re.search(r'看不到图片|无法查看图片|无法访问.{0,12}图片|图片没有.{0,6}(?:传|送|收)', text):
             self.write('quality', event, outcome='vision_failed', media='image')
