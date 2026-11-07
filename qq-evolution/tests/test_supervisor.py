@@ -97,6 +97,25 @@ if __name__ == "__main__":
 
 
 class PreservedBaselineTests(unittest.TestCase):
+    def test_candidate_validation_rejection_does_not_consume_rollback_budget(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / 'state.json'
+            state.write_text(json.dumps({'rollbackFailures': 1}), encoding='utf-8')
+            with patch.multiple(service, STATE=state, LOCK=root / 'job.lock'), \
+                 patch.dict(os.environ, {'QQ_EVOLUTION_COOLDOWN': '0', 'QQ_EVOLUTION_GIT_REMOTE': ''}), \
+                 patch.object(service, 'push_archive'), \
+                 patch.object(service, 'fetch_remote_events', return_value=[]), \
+                 patch.object(service, 'assess_events', return_value='candidate'), \
+                 patch.object(service, 'publish_iteration_patch_result', return_value=(False, 'candidate_validation')), \
+                 patch.object(service, 'run_learning_iteration'), \
+                 patch.object(service, 'flush_learning_notices'):
+                result = service.run_cycle()
+            saved = json.loads(state.read_text(encoding='utf-8'))
+            self.assertEqual(result, 'rejected')
+            self.assertEqual(saved['rollbackFailures'], 1)
+
     def test_release_failure_classifier_returns_stage_not_raw_stderr(self):
         self.assertEqual(service.release_failure_code(1, 'RuntimeError: production test suite failed'), 'production_tests')
         self.assertEqual(service.release_failure_code(255, 'ssh connection timed out'), 'ssh_transport')

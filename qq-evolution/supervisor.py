@@ -32,6 +32,12 @@ def record_monitor_health(**fields):
         print('monitor heartbeat write failed', flush=True)
 
 
+def publish_result_outcome(published, failure):
+    if published:
+        return 'published'
+    return 'rejected' if failure == 'candidate_validation' else 'release_error'
+
+
 def development_repo():
     return Path(os.environ.get("QQ_EVOLUTION_REPO", "/home/admin/qq-evolution/development"))
 
@@ -164,7 +170,9 @@ def run_cycle():
         return assess_events(critical_events if critical else events, repo, details=assessment_details)
 
     def publish(diff):
-        return 'published' if publish_iteration_patch(recount_hunks(diff), repo, details=assessment_details) else 'release_error'
+        published, failure = publish_iteration_patch_result(
+            recount_hunks(diff), repo, details=assessment_details)
+        return publish_result_outcome(published, failure)
 
     outcome = supervisor.run_once(evaluate_window, publish, int(time.time()))
     if window_hash and outcome in {"published", "no_change"}:
