@@ -3,6 +3,7 @@ import hashlib
 import json
 import time
 import subprocess
+import re
 from pathlib import Path
 
 from agent import evaluate_and_propose
@@ -35,7 +36,7 @@ def development_repo():
     return Path(os.environ.get("QQ_EVOLUTION_REPO", "/home/admin/qq-evolution/development"))
 
 
-def assess_events(events, repo, evaluator=None):
+def assess_events(events, repo, evaluator=None, details=None):
     window = events[-80:]
     full_quality = aggregate(events, minimum_pairs=1)
     if full_quality['analysisLeaks'] or full_quality['unexpectedEnglishReplies'] or full_quality.get('mediaFailures'):
@@ -44,6 +45,8 @@ def assess_events(events, repo, evaluator=None):
     if not quality["eligible"] and not (quality['analysisLeaks'] or quality['unexpectedEnglishReplies'] or quality.get('mediaFailures')):
         return ""
     finding, diff = (evaluator or evaluate_and_propose)(window, cwd=str(repo))
+    if finding and details is not None:
+        details.update({key: finding.get(key) for key in ('category', 'changeType')})
     return diff if finding else ""
 
 
@@ -69,13 +72,52 @@ def check_candidate(diff, repo):
     return paths
 
 
-def advance_baseline(diff, repo):
+def deployment_commit_message(diff, paths, receipt='', details=None):
+    """Index deployments without publishing model evidence, chat text or stderr."""
+    labels = []
+    for path in paths:
+        label = ('记忆与账号归因' if 'memory' in path or path.endswith('/policy.py') else
+                 '群聊参与' if 'group_' in path or 'participation' in path else
+                 '表达学习' if 'expression' in path else
+                 '人格与交流策略' if path == 'qq-persona.md' else
+                 '模型路由' if 'router' in path else '聊天运行逻辑')
+        if label not in labels:
+            labels.append(label)
+    snapshot = 'not provided'
+    for line in str(receipt or '').splitlines():
+        try:
+            data = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(data, dict) and data.get('status') == 'healthy' and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', str(data.get('snapshot', ''))):
+            snapshot = data['snapshot']
+    added = sum(line.startswith('+') and not line.startswith('+++') for line in diff.splitlines())
+    removed = sum(line.startswith('-') and not line.startswith('---') for line in diff.splitlines())
+    categories = {'repetition': '重复回复', 'silence': '应答缺失', 'latency': '回复延迟',
+                  'error': '运行错误', 'unnatural': '表达或社交行为不自然', 'privacy': '资料或信息边界问题'}
+    layers = {'prompt': '人格与提示词', 'rule': '行为规则', 'code': '业务代码'}
+    details = details or {}
+    reason = categories.get(details.get('category'), '自动评估发现的交流质量问题')
+    layer = layers.get(details.get('changeType'), '由实际改动文件确定')
+    return ('fix(evolution): 发布' + '、'.join(labels) + '的验证改进\n\n'
+            'Context: 自动质量评估或学习迭代提出的改进，仅在生产发布成功后归档。\n'
+            'Problem: ' + reason + '；改进层级：' + layer + '。\n'
+            'Scope: ' + ', '.join(paths) + '\n'
+            f'Changes: +{added} / -{removed} lines; 查看本提交 diff 获取具体行为变化。\n'
+            'Validation: 调用方先完成生产发布门禁；测试或健康检查失败时不推进此基线。\n'
+            'Production-Snapshot: ' + snapshot + '\n'
+            'Patch-SHA256: ' + hashlib.sha256(diff.encode()).hexdigest() + '\n'
+            'Rollback: 使用以上生产快照恢复；Git revert 仅生成代码回退，仍须测试后部署。\n'
+            'Data: 不归档原始聊天、模型分析原文、凭据或运行数据库。')
+
+
+def advance_baseline(diff, repo, receipt='', details=None):
     paths = check_candidate(diff, repo)
     commands = [
         ["git", "apply", "--whitespace=nowarn", "-"],
         ["git", "add", "--", *paths],
         ["git", "-c", "user.name=QQ Evolution", "-c", "user.email=qq-evolution@localhost",
-         "commit", "--only", "-m", "Record deployed QQ improvement", "--", *paths],
+         "commit", "--only", "-m", deployment_commit_message(diff, paths, receipt, details), "--", *paths],
     ]
     for index, command in enumerate(commands):
         subprocess.run(command, input=diff if index == 0 else None, text=True,
@@ -101,6 +143,7 @@ def run_cycle():
     repo = development_repo()
     push_archive(repo)
     window_hash = None
+    assessment_details = {}
     # Detection runs every poll, even during the ordinary quality cooldown.
     observed = fetch_remote_events(PRODUCTION_HOST, "/home/hermes/qq-audit")
     recent = [row for row in observed if int(row.get('timestamp',0)) >= int(time.time()*1000) - 3600000][-400:]
@@ -118,10 +161,10 @@ def run_cycle():
         if state.load().get("lastWindowHash") == window_hash:
             return ""
         critical_events = [row for row in events if row in recent]
-        return assess_events(critical_events if critical else events, repo)
+        return assess_events(critical_events if critical else events, repo, details=assessment_details)
 
     def publish(diff):
-        return 'published' if publish_iteration_patch(recount_hunks(diff), repo) else 'release_error'
+        return 'published' if publish_iteration_patch(recount_hunks(diff), repo, details=assessment_details) else 'release_error'
 
     outcome = supervisor.run_once(evaluate_window, publish, int(time.time()))
     if window_hash and outcome in {"published", "no_change"}:
@@ -163,7 +206,7 @@ def run_learning_iteration(repo,state):
             diff=raw['diff']; finding=raw['finding']; reflection=raw['reflection'].strip()
             if diff and finding:
                 diff=recount_hunks(diff)
-                published, failure=publish_iteration_patch_result(diff,repo)
+                published, failure=publish_iteration_patch_result(diff,repo,details=finding)
                 if published:
                     category=finding.get('category','quality')
                     change=finding.get('changeType','code')
@@ -228,7 +271,7 @@ def release_failure_code(returncode, stderr):
     return 'production_exit_'+str(returncode)
 
 
-def publish_iteration_patch_result(diff,repo):
+def publish_iteration_patch_result(diff,repo,details=None):
     lock = SingleJobLock(STATE.parent/'release.lock')
     if not lock.acquire():
         record_monitor_health(lastReleaseStatus='busy',lastReleaseFailure='release_lock_busy')
@@ -252,15 +295,15 @@ def publish_iteration_patch_result(diff,repo):
             failure=release_failure_code(result.returncode,result.stderr)
             record_monitor_health(lastReleaseStatus='rejected',lastReleaseFailure=failure)
             return False,failure
-        advance_baseline(diff,repo)
+        advance_baseline(diff,repo,getattr(result,'stdout',''),details)
         record_monitor_health(lastReleaseStatus='healthy',lastReleaseFailure=None)
         return True,None
     finally:
         lock.release()
 
 
-def publish_iteration_patch(diff,repo):
-    published,_=publish_iteration_patch_result(diff,repo)
+def publish_iteration_patch(diff,repo,details=None):
+    published,_=publish_iteration_patch_result(diff,repo,details=details)
     return published
 
 

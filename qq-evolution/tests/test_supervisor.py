@@ -50,6 +50,20 @@ class SupervisorTests(unittest.TestCase):
             self.assertEqual(subprocess.check_output(["git", "show", "HEAD:other.txt"], cwd=repo, text=True), "original\n")
             self.assertEqual((repo / "other.txt").read_text(), "unrelated\n")
             self.assertEqual(subprocess.check_output(["git", "--git-dir", str(remote), "show", "refs/heads/codex/qq-autonomous-evolution:qq-persona.md"], text=True), "new\n")
+            message = subprocess.check_output(['git', 'log', '-1', '--format=%B'], cwd=repo, text=True, encoding='utf-8')
+            self.assertIn('qq-persona.md', message)
+            self.assertIn('Patch-SHA256:', message)
+            self.assertIn('Validation:', message)
+            self.assertNotIn('old\n+new', message)
+
+    def test_commit_message_records_safe_receipt_without_chat_or_credentials(self):
+        diff = '--- a/qq-persona.md\n+++ b/qq-persona.md\n@@ -1 +1 @@\n-secret old conversation\n+secret new conversation\n'
+        receipt = 'diagnostic token=do-not-copy\n{"status":"healthy","snapshot":"20261108T000000Z-abc123"}'
+        message = service.deployment_commit_message(diff, ['qq-persona.md'], receipt)
+        self.assertIn('20261108T000000Z-abc123', message)
+        self.assertNotIn('do-not-copy', message)
+        self.assertNotIn('secret old conversation', message)
+        self.assertIn('+1 / -1', message)
 
     def test_successful_nonrepeated_replies_still_receive_quality_assessment(self):
         events = []

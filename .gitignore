@@ -20,3 +20,13 @@ __pycache__/
 qq-memory/
 qq-user-memory/
 qq-relationship/
+keys.txt
+keystxt
+*credentials*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.jsonl
+/*.patch
