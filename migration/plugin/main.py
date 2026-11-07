@@ -115,7 +115,7 @@ class JiangshengMigration(Star):
             return False
         text = event.message_str or ''
         return bool(re.search(
-            r'发(?:一条|个)?语音|用语音|语音(?:回复|回答)|唱(?:一下|一句|一首|首|歌|给)|给我唱|我要听|想听你唱|来首歌',
+            r'发(?:一条|个)?语音|用语音|语音(?:回复|回答)|唱(?:一下|一句|一首|首|歌|给)|给我唱|我要你唱|我要听(?:语音|你唱)|想听你唱|来首歌',
             text)) and not bool(re.search(r'不要.*语音|别.*语音|只.*文字|不要唱|别唱', text))
 
     def patch_tts(self, provider):
