@@ -25,6 +25,13 @@ class MigrationPolicyTest(unittest.TestCase):
         self.assertTrue(self.p.may_reply(msg, '3899701587', group=True))
         self.assertTrue(self.p.may_reply([{'type': 'at', 'data': {'qq': 'other'}}], '3899701587', group=False))
 
+    def test_private_replies_drop_redundant_opening_ack_but_preserve_standalone_ack(self):
+        self.assertEqual(self.p.remove_redundant_private_ack('嗯……那就休息吧。'), '那就休息吧。')
+        self.assertEqual(self.p.remove_redundant_private_ack('嗯，在呢。'), '在呢。')
+        self.assertEqual(self.p.remove_redundant_private_ack('嗯？老公～'), '嗯？老公～')
+        self.assertEqual(self.p.remove_redundant_private_ack('嗯。'), '嗯。')
+        self.assertEqual(self.p.remove_redundant_private_ack('我知道。'), '我知道。')
+
     def test_dedup_survives_restart_and_does_not_collide_across_platforms(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / 'seen.sqlite3'

@@ -5,6 +5,31 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+
+class ProfileAccessTests(unittest.TestCase):
+    def test_restricted_person_requires_admin_before_reading_profile(self):
+        spec = importlib.util.spec_from_file_location('profile_access_server', Path(__file__).parents[1] / 'admin/server.py')
+        server = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(server)
+        for role, qq, expected in [('readonly', '1474983035', 403),
+                                   ('admin', '1474983035', 200),
+                                   ('readonly', '123456', 200),
+                                   (None, '1474983035', 403)]:
+            with self.subTest(role=role, qq=qq):
+                handler = SimpleNamespace(path='/api/profile?qq=' + qq,
+                    require_session=Mock(return_value=('token', {'role': role})),
+                    send_json=Mock())
+                with patch.object(server, 'helper_call', return_value={}) as helper:
+                    server.Handler.do_GET(handler)
+                if expected == 403:
+                    self.assertEqual(handler.send_json.call_args.args[1], 403)
+                    helper.assert_not_called()
+                else:
+                    helper.assert_called_once_with({'action': 'profile', 'qq': qq}, timeout=20)
+                    self.assertEqual(len(handler.send_json.call_args.args), 1)
 
 
 class NativeProfileTests(unittest.TestCase):
@@ -49,9 +74,11 @@ class AdminPortraitTests(unittest.TestCase):
             module.RELATIONSHIP_MEMORY = Path(tmp)/'relations';module.RELATIONSHIP_MEMORY.mkdir()
             name=hashlib.sha256(b'user:123456').hexdigest()+'.json'
             (module.USER_MEMORY/name).write_text(json.dumps({'profile':{'preferredName':'甲','preferences':['我吗','足球','足球'],'relationships':['情侣']}}))
+            (module.RELATIONSHIP_MEMORY/name).write_text(json.dumps({'stage':'熟悉的朋友','affection':72,'familiarity':88,'trust':64}))
             result = module.profile_read('123456')
             self.assertEqual(result['portrait']['preferences'], ['足球'])
             self.assertEqual(result['portrait']['relationship']['basis'], 'legacy_unverified')
+            self.assertEqual(result['portrait']['relationship']['attitude']['affection'], 72)
             server_spec=importlib.util.spec_from_file_location('admin_server',Path(__file__).parents[1]/'admin/server.py')
             server=importlib.util.module_from_spec(server_spec);server_spec.loader.exec_module(server)
             view=server.profile_view(result)

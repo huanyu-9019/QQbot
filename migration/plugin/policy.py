@@ -13,6 +13,20 @@ _RESPONSE_REASONING = re.compile(r'\b(?:the repeated use of .{1,100}? appears to
 _REASONING_BOUNDARY = re.compile(r'</?(?:think|analysis|reasoning)(?:\s[^>]*)?>|<\|(?:analysis|start_header_id|end_header_id)\|>|(?m:^\s*(?:思考过程|内部分析|回复策略|analysis|reasoning)\s*[:：])', re.I)
 _UNEQUAL = re.compile(r'主人|奴隶|奴仆|所有者|支配者|服从|归.*所有|master|slave|owner', re.I)
 _MENTION_IDENTITY = r'(?:(?:他|她|这个人|这位)?是谁|(?:他|她)?叫(?:什么(?:名字)?|啥)|你(?:还)?(?:认识|记得)(?:他|她)(?:吗|不))'
+_PRIVATE_ACK = re.compile(r'^\s*嗯{1,3}\s*(?:[，,、。.!！?？…]+)\s*')
+_ACK_ONLY = re.compile(r'^(?:老公|老婆|亲爱的|宝贝|江生)[～~。.!！…\s]*$')
+
+
+def remove_redundant_private_ack(text):
+    """Drop an opening acknowledgement only when the same reply continues."""
+    value = str(text or '')
+    match = _PRIVATE_ACK.match(value)
+    if not match:
+        return value
+    remainder = value[match.end():]
+    if not remainder.strip() or _ACK_ONLY.fullmatch(remainder.strip()):
+        return value
+    return remainder
 
 
 def message_segments(event):
@@ -118,6 +132,19 @@ def person_portrait(profile, relationship=None):
     memories. Originals remain untouched for audit and later corrections.
     """
     profile = profile if isinstance(profile, dict) else {}
+    relationship = relationship if isinstance(relationship, dict) else {}
+    attitude = {'basis': 'legacy_estimate'}
+    for key in ('stage', 'boundary', 'lastMood'):
+        value = relationship.get(key)
+        if isinstance(value, str) and value.strip():
+            attitude[key] = redact(value.strip())[:120]
+    for key in ('affection', 'familiarity', 'trust'):
+        value = relationship.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 100:
+            attitude[key] = value
+    updated_at = relationship.get('updatedAt')
+    if isinstance(updated_at, (int, float, str)) and not isinstance(updated_at, bool):
+        attitude['updatedAt'] = updated_at
     rejected = []
     def clean(values, *, split=False):
         seen, result = set(), []
@@ -149,7 +176,7 @@ def person_portrait(profile, relationship=None):
         else:
             habits.append(item)
     return {'name': preferred[0] if preferred else '', 'aliases': aliases,
-            'relationship': {'labels': labels, 'basis': 'legacy_unverified',
+            'relationship': {'labels': labels, 'basis': 'legacy_unverified', 'attitude': attitude,
                 'description': ('迁入资料记有“' + '、'.join(labels) + '”的关系。') if labels else '暂没有可核实的明确关系记录。',
                 'note': '旧资料缺少逐条原话依据，不能当作新确认；也不能用旧分数推翻已有来往。当前明确更正及有来源的新记忆优先。'},
             'habits': habits, 'boundaries': boundaries, 'routine': routine,
