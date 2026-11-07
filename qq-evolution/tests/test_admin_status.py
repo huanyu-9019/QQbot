@@ -1,6 +1,9 @@
 import json
 import sys
 import unittest
+import io
+from types import SimpleNamespace
+from unittest.mock import patch, MagicMock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -8,6 +11,29 @@ from admin_status import build_snapshot, format_route
 
 
 class AdminStatusTests(unittest.TestCase):
+    def test_remote_probe_runs_standalone_in_astrbot_mode(self):
+        from publish_admin_status import PROBE
+        health = {'timestamp': 1000, 'acceptance': False, 'qqConnected': True, 'companionReady': True}
+        def path(value):
+            p = MagicMock()
+            p.exists.return_value = True
+            p.glob.return_value = []
+            p.read_text.return_value = 'astrbot' if str(value) == '/etc/jiangsheng-runtime' else json.dumps(health)
+            return p
+        def read_file(name, *args, **kwargs):
+            if str(name) == '/proc/meminfo':
+                return io.StringIO('MemAvailable: 512000 kB\n')
+            raise FileNotFoundError(name)
+        out = io.StringIO()
+        with patch('pathlib.Path', side_effect=path), patch('builtins.open', side_effect=read_file), \
+             patch('time.time', return_value=1000), patch('subprocess.run', return_value=SimpleNamespace(returncode=0, stdout='')), \
+             patch('urllib.request.urlopen', side_effect=lambda *a, **k: io.BytesIO(b'{"routes": []}')), \
+             patch('sys.stdout', out):
+            exec(compile(PROBE, 'remote-admin-probe', 'exec'), {})
+        data = json.loads(out.getvalue())
+        self.assertEqual(data['runtime'], 'astrbot')
+        self.assertTrue(data['qqConnected'])
+
     def test_snapshot_contains_both_hosts_and_no_conversation_or_credentials(self):
         data = build_snapshot(
             now=1000,

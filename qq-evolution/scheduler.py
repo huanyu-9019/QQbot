@@ -3,11 +3,11 @@ import json
 import os
 from pathlib import Path
 
-INTERVAL = 900
+INTERVAL = 1800
 
 
 def learning_notice(row):
-    prefix = f"江生学习#{int(row['iteration'])}："
+    prefix = f"江生学习 {int(row['iteration'])}："
     if row.get('updated') == 'code':
         suffix = '。已发布并通过生产测试和健康检查。'
     elif str(row.get('reason', '')).startswith('Iteration assessment unavailable:'):

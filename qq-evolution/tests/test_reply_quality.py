@@ -7,6 +7,30 @@ from metrics import aggregate,reply_quality_issue,overdue_turns
 from collector import sanitize_record
 import agent,supervisor
 class ReplyQualityTests(unittest.TestCase):
+ def test_identity_conflict_survives_collection_and_is_counted(self):
+  row=sanitize_record(dict(timestamp=1,direction='quality',kind='group',sessionHash='a'*64,text='secret name',outcome='sender_identity_mismatch',turnId='x'))
+  self.assertIsNotNone(row)
+  self.assertEqual(row['text'],'')
+  report=aggregate([row])
+  self.assertEqual(report['blockedIdentityReplies'],1)
+  self.assertEqual(report['blockedQualityReplies'],1)
+ def test_habitual_acknowledgement_counts_private_turns_not_split_or_voice_duplicates(self):
+  events=[dict(direction='delivered',kind='private',sessionHash='person-a',turnId=str(i),text=text)
+          for i,text in enumerate(['嗯，在。','嗯，知道了。','嗯嗯，明天见。','嗯，好呀。','今天怎么样？'])]
+  self.assertEqual(aggregate(events)['habitualAcknowledgementSessions'],1)
+  self.assertEqual(aggregate(events[:2]*4)['habitualAcknowledgementSessions'],0)
+  self.assertEqual(aggregate([{**e,'sessionHash':str(i)} for i,e in enumerate(events)])['habitualAcknowledgementSessions'],0)
+  self.assertEqual(aggregate([{**e,'kind':'group'} for e in events])['habitualAcknowledgementSessions'],0)
+ def test_queued_learning_notice_stays_unacknowledged_without_error(self):
+  import tempfile
+  from daemon import StateStore
+  with tempfile.TemporaryDirectory() as d:
+   state=Path(d)/'state.json'
+   (Path(d)/'learning-records.jsonl').write_text(json.dumps({'iteration':1,'reason':'保留经过验证的回复边界并继续观察','updated':'learning_record'}),encoding='utf-8')
+   with patch.object(supervisor,'STATE',state),patch.object(supervisor,'publish_event',return_value=False):
+    supervisor.flush_learning_notices()
+   self.assertEqual(StateStore(Path(d)/'learning-notice-receipts.json').load(),{})
+
  def test_counts_unpaired_split_and_voice_leaks_and_blocked_attempts(self):
   events=[{'direction':'delivered','turnId':'x','text':'Initial assessment: The user expresses aimlessness.'},
     {'direction':'delivered','turnId':'x','media':'voice','text':'The interaction involves a direct question.'},

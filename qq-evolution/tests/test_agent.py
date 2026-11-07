@@ -7,10 +7,16 @@ from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from agent import _failure_code, _invoke_fixed, evaluate, evaluate_and_propose, parse_finding, propose_patch, validate_diff
+from agent import _failure_code, _invoke_fixed, evaluate, evaluate_and_propose, parse_finding, propose_patch, validate_diff, relay_wrapper_text
 
 
 class AgentTests(unittest.TestCase):
+    def test_relay_wrapper_resolves_credential_and_cli_from_service_home(self):
+        script = relay_wrapper_text()
+        self.assertIn('$HOME/.config/codex/proxy.key', script)
+        self.assertIn('$HOME/.local/bin/codex', script)
+        self.assertNotIn('/root/', script)
+
     def test_malformed_model_output_cannot_mark_a_window_as_successfully_assessed(self):
         for response in ("", "not json", "[]", "{}", '{"finding": null, "diff": "unexpected"}'):
             with self.subTest(response=response), self.assertRaises(ValueError):
@@ -90,4 +96,3 @@ class PreservedBaselineTests(unittest.TestCase):
             {"direction": "delivered", "turnId": "x", "timestamp": 2, "kind": "group", "text": "reply"},
         ], runner=runner)
         self.assertIn('"foreignMentionReplies": 1', calls[0])
-

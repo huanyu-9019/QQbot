@@ -4,7 +4,7 @@ from unittest.mock import patch
 import subprocess
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]))
-from status_report import report_slot, format_report, remote_script, publish_event, production_probe_script
+from status_report import report_slot, format_report, remote_script, publish_event, production_probe_script, publication_result
 
 class StatusReportTests(unittest.TestCase):
     def test_five_minutes_for_two_hours_then_four_hours(self):
@@ -45,10 +45,18 @@ class StatusReportTests(unittest.TestCase):
 
 
 class PreservedBaselineTests(unittest.TestCase):
+    def test_account_cooldown_is_reported_as_queued_not_failed(self):
+        self.assertEqual(publication_result({'status': 'deferred', 'reason': 'account_cooldown'}, {}),
+                         {'sent': False, 'status': 'queued', 'reason': 'account_cooldown'})
+        with patch('status_report.remote_script', return_value=publication_result({'status': 'deferred', 'reason': 'account_cooldown'}, {})):
+            self.assertFalse(publish_event('qq-learn-2', '江生学习#2：本轮继续观察群聊语境并保留已验证版本。'))
+
     def test_iteration_update_requires_valid_space_event_and_reports_confirmation(self):
         with patch('status_report.remote_script', return_value={'sent': True}) as remote:
             self.assertTrue(publish_event('qq-learn-2', '江生学习#2：减少重复表达。本轮没有代码改动，未重跑测试；沿用最近验证版本。'))
             self.assertIn('qq-learn-2', remote.call_args.args[0])
+            compile(remote.call_args.args[0], 'qzone-publish-script', 'exec')
+            self.assertIn("gate.get('status') == 'deferred'", remote.call_args.args[0])
         with self.assertRaises(ValueError):
             publish_event('../bad', 'invalid')
 
@@ -61,10 +69,8 @@ class PreservedBaselineTests(unittest.TestCase):
 
     def test_half_hour_iterations_include_reasoned_no_change_events(self):
         from scheduler import iteration_due,record_iteration
-        self.assertFalse(iteration_due({'lastIteration':100},100+899))
-        self.assertTrue(iteration_due({'lastIteration':100},100+900))
+        self.assertFalse(iteration_due({'lastIteration':100},100+1799))
+        self.assertTrue(iteration_due({'lastIteration':100},100+1800))
         state={};record_iteration(state,now=1900,updated=False,reason='No measurable improvement passed the quality gate')
         self.assertEqual(state['iterationCount'],1)
         self.assertEqual(state['updateKind'],'learning_record')
-
-

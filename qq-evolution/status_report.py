@@ -69,6 +69,13 @@ def save_schedule(data):
     tmp.replace(SCHEDULE)
 
 
+def publication_result(gate, record):
+    if isinstance(gate, dict) and gate.get('status') == 'deferred':
+        return {'sent': False, 'status': 'queued', 'reason': gate.get('reason')}
+    return {'sent': record.get('status') == 'sent' and bool(record.get('tid')),
+            'status': record.get('status'), 'reason': record.get('reason')}
+
+
 def production_probe_script():
     script='import json,shutil,subprocess,time,urllib.request\nfrom pathlib import Path\n'+inspect.getsource(probe)+'\nprint(json.dumps(probe()))\n'
     script=script.replace('print(json.dumps(probe()))',
@@ -102,12 +109,17 @@ def publish_event(event_id, text):
         f'r=subprocess.run(["/home/hermes/.hermes/tools/node-26.12.1-linux-x64/bin/node","/home/hermes/qq-qzone-post.mjs","--publish-update",{event_id!r}],input={text!r},text=True,capture_output=True,timeout=100)\n'
         's=json.loads(Path("/home/hermes/qq-qzone-state.json").read_text())\n'
         f'v=s.get("publishedUpdates",{{}}).get({event_id!r},{{}})\n'
-        'print(json.dumps({"sent":v.get("status")=="sent" and bool(v.get("tid")),"publisher_exit":r.returncode}))\n'
+        'try: gate=json.loads(r.stdout.strip().splitlines()[-1])\nexcept (ValueError,IndexError): gate={}\n'
+        + inspect.getsource(publication_result) + '\n'
+        'print(json.dumps(publication_result(gate,v)|{"publisher_exit":r.returncode}))\n'
     )
     result=remote_script(script,timeout=130)
+    if result.get('sent'):
+        return True
+    if result.get('status') == 'queued':
+        return False
     if not result.get('sent'):
         raise RuntimeError('QQ Space publication unconfirmed')
-    return True
 
 def main():
     now=int(time.time())

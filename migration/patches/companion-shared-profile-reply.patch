@@ -1,0 +1,215 @@
+--- a/companion_v2/conversation/messages.py
++++ b/companion_v2/conversation/messages.py
+@@ -166,6 +166,7 @@
+         self.group_memory = GroupMemory(self)
+         from companion_v2.memory.person.service import PersonAcquaintance
+         self.acquaintance = PersonAcquaintance(self.runtime, self.tasks)
++        self.acquaintance.messages = self
+         self.cross_window = cross_window
+         self.cross_window_context = (ConversationAwarenessContext(cross_window)
+                                      if cross_window is not None else None)
+--- a/companion_v2/memory/person/service.py
++++ b/companion_v2/memory/person/service.py
+@@ -221,6 +221,18 @@
+ 
+     # -- model tool ----------------------------------------------------------
+ 
++    def shared_statements(self, context, speaker_id=None):
++        from .shared import statements
++        messages = getattr(self, "messages", None)
++        return statements(self, messages, context, speaker_id=speaker_id) if messages is not None else []
++
++    def shared_contribution(self, context, at):
++        items = self.shared_statements(context)
++        if not items:
++            return None
++        return ContextContribution("person-shared-profile", OWNER, "shared_person_profile",
++                                   ContributionState.READY, encode({"shared_group_statements": items}))
++
+     def recall(self, context, speaker_id=None):
+         """Project one member's card for the current conversation. The default
+         subject is the current speaker; a number must resolve through the
+@@ -242,4 +254,6 @@
+             return {"speaker_id": native, "state": "unacquainted"}
+         budget = self.settings.read(context)["person.acquaintance_card_chars"] if self.settings is not None else 1024
+         payload = self.projection(context, json.loads(row["document_json"]), budget=budget, with_contexts=True)
++        if context.scope.kind is ScopeKind.PRIVATE and subject_id == context.actor.subject.subject_id:
++            payload["shared_group_statements"] = self.shared_statements(context)
+         return {"speaker_id": native, "state": "known", **payload}
+--- a/companion_v2/memory/person/tools.py
++++ b/companion_v2/memory/person/tools.py
+@@ -42,6 +42,13 @@
+         return {"state": "succeeded", "effect": "none", "payload": result}, None
+ 
+     def validate(self, row, context, result):
++        if "shared_group_statements" in result.get("payload", {}):
++            current = {item["memory_id"]: item for item in self.acquaintance.shared_statements(context)}
++            # Do not introduce newer facts into a sealed tool result, or retain
++            # a revised/withdrawn source through the old derived-card cache.
++            saved = result["payload"]["shared_group_statements"]
++            result = {**result, "payload": {**result["payload"], "shared_group_statements":
++                [item for item in saved if current.get(item["memory_id"]) == item]}}
+         # Bot-internal derived state: a later counter bump does not invalidate
+         # what this turn already saw, and the card carries no source of its own.
+         return result, None
+--- /dev/null
++++ b/companion_v2/memory/person/shared.py
+@@ -0,0 +1,71 @@
++"""A person's own public statements may follow them into their private chat.
++
++This is a read projection over governed group memory, not a copied fact store.
++Private sources never enter the query; other members, bots, roles and groups'
++audiences cannot use this bridge. Each source is checked again on every read.
++"""
++
++import json
++
++from companion_v2.execution.models import TaskContext, TaskError, encode
++from companion_v2.foundation.refs import ScopeKind
++from .access import owner_key
++
++
++INSTRUCTION = (
++    "这是同一认证账号在群聊和本人私聊共用档案中的公开陈述。它们是对方曾说过的话，"
++    "不自动成为已核实事实；提及其他人时仍属于其他人，不转成当前用户的偏好。"
++    "结合称呼、明确偏好和共同经历自然接话，尊重新说法、时间和不确定性。"
++    "不用因为换成私聊就假装第一次认识；不要播报账号、内部编号或群成员信息。"
++    "私人记忆仍只用于本人私聊，不向任何群聊披露。未显示不代表从未说过。"
++)
++
++
++def statements(acquaintance, messages, context, *, speaker_id=None, limit=8):
++    acquaintance.check(context)
++    if not acquaintance.available(context):
++        return []
++    if context.scope.kind is not ScopeKind.PRIVATE:
++        return []
++    native = context.actor.principal.native_account_id
++    if (context.audience.recipients != (context.actor.subject,)
++            or speaker_id is not None and str(speaker_id) != native):
++        raise TaskError("shared_profile_owner_required", "only this person's private audience may recall their group statements")
++    # Apply author and route filters before the bounded scan. The original
++    # operation is only a locator; full original-source governance is checked
++    # by GroupMemory._read_row below, including withdrawal, binding and role.
++    rows = messages.runtime.read_all("""SELECT v.*, o.context_json AS original_context
++        FROM memory_views v JOIN memory_operations o
++          ON json_extract(o.result_json, '$.memory_id') = v.view_id
++         AND json_extract(o.result_json, '$.revision') = v.revision
++        WHERE v.kind = 'group.public.statement.v1' AND v.state = 'active'
++          AND o.namespace = 'memory.group' AND o.state = 'saved'
++          AND json_extract(v.document_json, '$.author') = ?
++          AND json_extract(o.context_json, '$.audience.scope.installation_id') = ?
++          AND json_extract(o.context_json, '$.audience.scope.platform') = ?
++          AND json_extract(o.context_json, '$.audience.scope.bot_id') = ?
++          AND json_extract(o.context_json, '$.audience.scope.account_id') = ?
++          AND json_extract(o.context_json, '$.role_binding.role.subject_id') = ?
++        ORDER BY v.updated_at DESC, v.view_id DESC LIMIT 64""",
++        (context.actor.subject.subject_id, context.scope.installation_id, context.scope.platform,
++         context.scope.bot_id, context.scope.account_id, context.role_binding.role.subject_id))
++    items, seen, used = [], set(), 0
++    for row in rows:
++        original = TaskContext.restore(json.loads(row['original_context']))
++        if owner_key(original) != owner_key(context) or original.actor.principal.host_id != context.actor.principal.host_id:
++            continue
++        try:
++            item, _ = messages.group_memory._read_row(row, at=messages.tasks.now())
++        except TaskError:
++            continue
++        if item['memory_id'] in seen or item['speaker_id'] != native:
++            continue
++        size = len(encode(item).encode('utf-8'))
++        if used + size > 8192:
++            continue
++        seen.add(item['memory_id'])
++        used += size
++        items.append(item)
++        if len(items) >= min(8, max(1, limit)):
++            break
++    return items
+--- a/astrbot_host/core_reply_context.py
++++ b/astrbot_host/core_reply_context.py
+@@ -320,6 +320,9 @@
+         (messages.acquaintance.card_contribution(context, at),)))
+     optional("cross_window", lambda: _cross_window_section(
+         messages, context, at, getattr(native_input, "text", "")))
++    from companion_v2.memory.person.shared import INSTRUCTION as SHARED_PROFILE_INSTRUCTION
++    optional("shared_person_profile", lambda: _material_section("同一人的共用档案", SHARED_PROFILE_INSTRUCTION,
++        (messages.acquaintance.shared_contribution(context, at),)))
+     optional("knowledge_reference", lambda: _material_section("角色知识资料", KNOWLEDGE_INSTRUCTION,
+         _knowledge_materials(messages, context, native_input, at)))
+     optional("knowledge_member_clue", lambda: _material_section("本窗口成员资料", MEMBER_CLUE_INSTRUCTION,
+--- a/astrbot_host/core_reply_perception.py
++++ b/astrbot_host/core_reply_perception.py
+@@ -180,7 +180,8 @@
+ 
+     reason = admission.get("reason")
+     hint = ("本轮没有明确 @，入站候选依据是：" + REASONS.get(reason, "原人格自主判断参与")
+-            + "。候选只表示可以考虑参与，默认旁听；弱相关词不代表在叫你，近期同一成员发言也不代表仍在对你说话。"
++            + "。结合上下文判断参与；对方正在与你对话、接你的问题、明确求助或邀请你讨论时积极接住，不要求每句重新 @。"
++            "弱相关词不代表在叫你，近期同一成员发言也不代表仍在对你说话。"
+             "没有清楚的参与邀请、他人在交流、已有回答或近期已说够时，调用 group.participation.choose 选择 skip，"
+             "决定接话时先记录 mode=reply 和简短 reason。")
+     if reason in ("active_follow_up", "reply_follow_up"):
+--- a/companion_v2/conversation/reply_settings.py
++++ b/companion_v2/conversation/reply_settings.py
+@@ -39,15 +39,15 @@
+                      if key not in ("private_probability", "group_probability",
+                                     "private_cooldown_seconds", "group_cooldown_seconds"))
+ GROUP_AIR_DEFAULTS = {"group_air_guard_enabled": True, "group_air_guard_window_seconds": 60,
+-                      "group_air_guard_max_bot_replies": 3, "group_air_guard_cooldown_seconds": 150,
++                      "group_air_guard_max_bot_replies": 6, "group_air_guard_cooldown_seconds": 30,
+                       "group_air_guard_polite_loop_limit": 2, "group_high_intensity_enabled": False}
+ GROUP_AIR_LIMITS = {"group_air_guard_window_seconds": (30, 1800),
+                     "group_air_guard_max_bot_replies": (1, 20),
+                     "group_air_guard_cooldown_seconds": (0, 1800),
+                     "group_air_guard_polite_loop_limit": (1, 10)}
+ GROUP_CONTINUATION_DEFAULTS = {"group_conversation_followup_enabled": True,
+-                               "group_conversation_followup_seconds": 120,
+-                               "group_conversation_followup_max_turns": 3}
++                               "group_conversation_followup_seconds": 180,
++                               "group_conversation_followup_max_turns": 8}
+ GROUP_CONTINUATION_LIMITS = {"group_conversation_followup_seconds": (15, 1800),
+                              "group_conversation_followup_max_turns": (1, 12)}
+ GROUP_WAKEUP_LEGACY_FIELDS = frozenset(("group_wakeup_enabled", "group_wakeup_direct_words",
+@@ -55,13 +55,13 @@
+                                         "group_wakeup_question_enabled"))
+ GROUP_WAKEUP_DEFAULTS = {"group_wakeup_enabled": True, "group_wakeup_direct_words": "[]",
+                          "group_wakeup_context_words": "[]",
+-                         "group_wakeup_interest_keywords": "[]", "group_wakeup_question_enabled": False,
++                         "group_wakeup_interest_keywords": "[]", "group_wakeup_question_enabled": True,
+                          "group_wakeup_bot_name": "", "group_wakeup_primary_member_ids": "[]",
+                          "group_wakeup_owner_direct_words": "[]",
+-                         "group_wakeup_interest_probability": 0.18, "group_wakeup_question_threshold": 65,
++                         "group_wakeup_interest_probability": 0.4, "group_wakeup_question_threshold": 55,
+                          "group_wakeup_cold_group_enabled": False, "group_wakeup_cold_group_threshold": 65,
+-                         "group_wakeup_cold_group_idle_minutes": 25, "group_wakeup_cooldown_seconds": 90,
+-                         "group_wakeup_fatigue_limit": 5, "group_wakeup_fatigue_decay_minutes": 90,
++                         "group_wakeup_cold_group_idle_minutes": 25, "group_wakeup_cooldown_seconds": 30,
++                         "group_wakeup_fatigue_limit": 10, "group_wakeup_fatigue_decay_minutes": 30,
+                          "group_wakeup_bot_name_enabled": True,
+                          "group_wakeup_generated_keyword_limit": 24,
+                          "group_wakeup_topic_interest_max_boost": 45,
+@@ -69,7 +69,7 @@
+                          "group_wakeup_image_enabled": False,
+                          "group_wakeup_image_weight": 0.2,
+                          "group_wakeup_image_default_guidance_enabled": True,
+-                         "group_wakeup_short_text_wait_ms": 15000, "group_wakeup_log_limit": 80}
++                         "group_wakeup_short_text_wait_ms": 2000, "group_wakeup_log_limit": 80}
+ GROUP_WAKEUP_ADDED_FIELDS = frozenset(("group_wakeup_bot_name_enabled",
+     "group_wakeup_generated_keyword_limit", "group_wakeup_topic_interest_max_boost",
+     "group_wakeup_debounce_pending_penalty"))
+--- a/companion_v2/conversation/private_debounce.py
++++ b/companion_v2/conversation/private_debounce.py
+@@ -20,9 +20,9 @@
+ 
+ DEFAULTS = {
+     "private_debounce_enabled": True,
+-    "private_debounce_min_ms": 1500,
+-    "private_debounce_max_ms": 4000,
+-    "private_debounce_total_ms": 8000,
++    "private_debounce_min_ms": 600,
++    "private_debounce_max_ms": 1500,
++    "private_debounce_total_ms": 4000,
+ }
+ # Defaults stay adaptive; the wider range also preserves fixed legacy windows.
+ LIMITS = {
