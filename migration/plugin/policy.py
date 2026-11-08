@@ -12,6 +12,7 @@ _ANALYSIS = re.compile(r'\b(?:initial assessment|now assessing|debugging artifac
 _RESPONSE_REASONING = re.compile(r'\b(?:the repeated use of .{1,100}? appears to be|further investigation is needed to ascertain|considering both options are unclear|the guidelines suggest active participation)\b', re.I | re.S)
 _REASONING_BOUNDARY = re.compile(r'</?(?:think|analysis|reasoning)(?:\s[^>]*)?>|<\|(?:analysis|start_header_id|end_header_id)\|>|(?m:^\s*(?:思考过程|内部分析|回复策略|analysis|reasoning)\s*[:：])', re.I)
 _UNEQUAL = re.compile(r'主人|奴隶|奴仆|所有者|支配者|服从|归.*所有|master|slave|owner', re.I)
+_COERCIVE = re.compile(r'(?:缠着你|纠缠你).{0,12}(?:忍不住|答应)|(?:动弹不得|只能求饶)|(?:不许|不准|必须).{0,8}(?:服从|听话)', re.I)
 _MENTION_IDENTITY = r'(?:(?:他|她|这个人|这位)?是谁|(?:他|她)?叫(?:什么(?:名字)?|啥)|你(?:还)?(?:认识|记得)(?:他|她)(?:吗|不))'
 _PRIVATE_ACK = re.compile(r'^\s*嗯{1,3}\s*(?:[，,、。.!！?？…]+)\s*')
 _ACK_ONLY = re.compile(r'^(?:老公|老婆|亲爱的|宝贝|江生)[～~。.!！…\s]*$')
@@ -217,6 +218,8 @@ def legacy_summary(record):
 
 def quality_issue(text, incoming=''):
     text = str(text or '')
+    if _COERCIVE.search(text):
+        return 'coercive_relationship'
     if '<QQ_SILENT>' in text and text.strip() != '<QQ_SILENT>':
         return 'mixed_silence_marker'
     if _ANALYSIS.search(text) or _RESPONSE_REASONING.search(text) or _REASONING_BOUNDARY.search(text):
