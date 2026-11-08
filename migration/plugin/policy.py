@@ -220,6 +220,8 @@ def quality_issue(text, incoming=''):
     text = str(text or '')
     if _COERCIVE.search(text):
         return 'coercive_relationship'
+    if _INTERNAL_MARKUP.search(text):
+        return 'internal_markup_leak'
     if '<QQ_SILENT>' in text and text.strip() != '<QQ_SILENT>':
         return 'mixed_silence_marker'
     if _ANALYSIS.search(text) or _RESPONSE_REASONING.search(text) or _REASONING_BOUNDARY.search(text):
@@ -297,3 +299,4 @@ def sender_identity_conflict(text, binding):
         if re.match(r'^\s*' + alias + r'[，,：:]\s*', str(text)):
             return True
     return False
+_INTERNAL_MARKUP = re.compile(r'<companion_v2_reaction\b[^>]*>.*?</companion_v2_reaction\s*>', re.I | re.S)
