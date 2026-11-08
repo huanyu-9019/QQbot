@@ -13,7 +13,7 @@ _RESPONSE_REASONING = re.compile(r'\b(?:the repeated use of .{1,100}? appears to
 _REASONING_BOUNDARY = re.compile(r'</?(?:think|analysis|reasoning)(?:\s[^>]*)?>|<\|(?:analysis|start_header_id|end_header_id)\|>|(?m:^\s*(?:思考过程|内部分析|回复策略|analysis|reasoning)\s*[:：])', re.I)
 _UNEQUAL = re.compile(r'主人|奴隶|奴仆|所有者|支配者|服从|归.*所有|master|slave|owner', re.I)
 _MENTION_IDENTITY = r'(?:(?:他|她|这个人|这位)?是谁|(?:他|她)?叫(?:什么(?:名字)?|啥)|你(?:还)?(?:认识|记得)(?:他|她)(?:吗|不))'
-_PRIVATE_ACK = re.compile(r'^\s*嗯{1,3}\s*(?:[，,、。.!！?？…]+)\s*')
+_PRIVATE_ACK = re.compile(r'^\s*(?:嗯{1,3}|唔)\s*(?:[，,、。.!！?？…]+)\s*')
 _ACK_ONLY = re.compile(r'^(?:老公|老婆|亲爱的|宝贝|江生)[～~。.!！…\s]*$')
 
 
