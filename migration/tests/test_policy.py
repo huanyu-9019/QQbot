@@ -32,8 +32,8 @@ class MigrationPolicyTest(unittest.TestCase):
         self.assertEqual(self.p.remove_redundant_private_ack('嗯。'), '嗯。')
         self.assertEqual(self.p.remove_redundant_private_ack('我知道。'), '我知道。')
         self.assertEqual(self.p.remove_redundant_private_ack('\u5514\u2026\u2026\u90a3\u4f60\u7ee7\u7eed\u8bf4\u3002'), '\u90a3\u4f60\u7ee7\u7eed\u8bf4\u3002')
-        self.assertEqual(self.p.remove_redundant_private_ack('\u5514\u3002'), '\u5514\u3002')
-        self.assertEqual(self.p.remove_redundant_private_ack('\u5514\u2026\u2026'), '\u5514\u2026\u2026')
+        self.assertEqual(self.p.remove_redundant_private_ack('\u5514\u3002'), '\u5728\u5462\u3002')
+        self.assertEqual(self.p.remove_redundant_private_ack('\u5514\u2026\u2026'), '\u5728\u5462\u3002')
 
     def test_dedup_survives_restart_and_does_not_collide_across_platforms(self):
         with tempfile.TemporaryDirectory() as d:

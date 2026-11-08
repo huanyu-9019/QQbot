@@ -24,6 +24,10 @@ def remove_redundant_private_ack(text):
     if not match:
         return value
     remainder = value[match.end():]
+    # The model's standalone Cantonese filler became a stuck private-chat loop.
+    # Keep standalone "嗯" semantics, but never send a bare "唔" as a reply.
+    if value[match.start():match.end()].lstrip().startswith('唔') and not remainder.strip():
+        return '在呢。'
     if not remainder.strip() or _ACK_ONLY.fullmatch(remainder.strip()):
         return value
     return remainder
